@@ -9,6 +9,9 @@
 - 🔎 Kitap adı / yazar ile arama (Open Library): yalnızca ad, yazar, tür ve sayfa sayısı çekilir
 - 📊 Kendi ölçütlerini ve ağırlıklarını sınırsız ekle · Add as many scoring criteria and weights as you like
 - 🟩 Puanlanmamış satırlar soluk, puanlananlar skora göre koyulaşır · Unscored rows are faded; scored rows get more intense with the score
+- ✍️ Yazar / tür hücrelerinde otomatik tamamlama (Enter/Tab kabul eder) · Autocomplete for author / genre cells
+- 🌐 Varsayılan ölçütler seçtiğin dile göre çevrilir · Default criteria follow your language
+- 📣 Başlıktaki duyuru kutusu: yeni sürüm ve yeni uygulama haberleri · Announcement box for new versions and apps
 - 📁 Excel'den içe aktarma / Excel'e dışa aktarma · Excel import / export
 - Hesap yok, reklam yok, takip yok · No account, no ads, no tracking
 
@@ -28,7 +31,8 @@ The app is not code-signed yet, so Windows may show an "unknown publisher" warni
 
 ## Gizlilik / Privacy
 - Verilerin yalnızca bilgisayarında, `%APPDATA%\NextBook` klasöründe tutulur. / Your data stays on your computer.
-- Tek ağ bağlantısı: arama yaptığında `openlibrary.org`'a giden kitap adı / yazar sorgusu. / The only network request is your search query to `openlibrary.org`.
+- Ağ bağlantıları: (1) arama yaptığında `openlibrary.org`'a giden kitap adı / yazar sorgusu, (2) açılışta duyuru dosyasını okumak için tek bir HTTPS GET isteği (kimlik, kitap verisi veya çerez gönderilmez; sunucu yalnızca `User-Agent: NextBook/<sürüm>` görür). / Network: (1) your search query to `openlibrary.org`, (2) one HTTPS GET at startup for the announcement file (no identifiers, no book data; the server only sees `User-Agent: NextBook/<version>`).
+- Duyuruları kapatmak için `%APPDATA%\NextBook\settings.json` içine `"announcements": false` yaz. / To disable announcements set `"announcements": false` in `settings.json`.
 
 ## Kaynaktan çalıştırma / Run from source
 ```
@@ -37,9 +41,17 @@ python next_book.py
 pyinstaller --onedir --windowed --name NextBook --icon next_book.ico --add-data "next_book.ico;." next_book.py
 ```
 
+## Duyuru sunucusu / Announcement feed
+
+Tüm uygulamalar aynı JSON dosyasını okuyabilir (GitHub Pages, kendi sunucun, herhangi bir statik barındırma). Örnek: `announcements.example.json`.
+Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL` ortam değişkeniyle) ayarla. Yalnızca HTTPS kabul edilir.
+
+- `apps.<uygulama>.latest`: kullanıcının sürümü bundan eskiyse otomatik "yeni sürüm" duyurusu çıkar.
+- `announcements[]`: `apps` (`["*"]` = hepsi), `min_version` / `max_version`, `starts` / `expires`, `priority`, `type` (`update` · `new_app` · `info`), `text` (dil koduyla; yoksa `en`), `url` (isteğe bağlı, https).
+
 ## Sürüm yayınlama / Releasing
 ```
-git tag v1.2.0
+git tag v1.3.0
 git push --tags
 ```
 GitHub Actions exe'yi derler ve Releases'e yükler. / GitHub Actions builds the exe and attaches it to the release.

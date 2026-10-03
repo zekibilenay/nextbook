@@ -27,17 +27,27 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
+import webbrowser
+import datetime
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
+APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekiyildirimboun/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
 DATA_FILE = DATA_DIR / "next_book.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"     # dil / tema / yazı tipi (veriden ayrı)
+
+# Duyuru kaynağı: tüm uygulamaların ortak kullandığı tek bir JSON dosyası (bkz. announcements.example.json).
+# Sadece HTTPS kabul edilir. Boş bırakırsan duyuru özelliği tamamen kapanır.
+ANNOUNCE_URL = os.environ.get("NEXTBOOK_ANNOUNCE_URL",
+                              "https://zekiyildirimboun.github.io/announcements/feed.json")
+ANNOUNCE_REFRESH_MS = 6 * 60 * 60 * 1000       # açık kaldığı sürece 6 saatte bir yeniden sor
+ANNOUNCE_ROTATE_MS = 10_000                     # birden çok duyuru varsa değişme süresi
 
 DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
 DEFAULT_SCALE_MAX = 5
@@ -101,9 +111,11 @@ I18N = {
  "font_preview": "Okuma sırası belli olsun — Aa Bb 123", "font_reset": "Varsayılan", "btn_apply": "Uygula",
  "about_title": "Hakkında",
  "about_text": "Next Book {version}\n\nÜcretsiz ve açık kaynaklı kişisel okuma listesi.\n{repo}\n\n"
-               "Verilerin yalnızca bilgisayarında tutulur:\n{path}\n\nTek ağ bağlantısı: arama yaparken openlibrary.org",
+               "Verilerin yalnızca bilgisayarında tutulur:\n{path}\n\nAğ bağlantıları: arama yaparken openlibrary.org ve duyuruları almak için duyuru sunucusu (kimlik bilgisi göndermez).",
  "crit_1": "İlgi Düzeyi", "crit_2": "Kişisel Katkı", "crit_3": "Okuma Kolaylığı",
  "crit_4": "Sosyal Bağlam", "crit_5": "Uzun Vadeli / Referans Değeri",
+ "ann_new_version": "Yeni sürüm yayınlandı: {latest} (sizdeki: {current})", "ann_open_q": "Bağlantı tarayıcıda açılsın mı?\n{url}",
+ "ann_dismiss": "Bu duyuruyu kapat",
 },
 "en": {
  "tagline": "Search → add to list → score → know what to read next",
@@ -155,9 +167,11 @@ I18N = {
  "font_preview": "Know what to read next — Aa Bb 123", "font_reset": "Default", "btn_apply": "Apply",
  "about_title": "About",
  "about_text": "Next Book {version}\n\nA free, open-source personal reading list.\n{repo}\n\n"
-               "Your data stays on your computer:\n{path}\n\nThe only network connection is openlibrary.org when you search.",
+               "Your data stays on your computer:\n{path}\n\nNetwork connections: openlibrary.org when you search, and the announcement server for news (no identifying data is sent).",
  "crit_1": "Interest", "crit_2": "Personal Value", "crit_3": "Ease of Reading",
  "crit_4": "Social Context", "crit_5": "Long-term / Reference Value",
+ "ann_new_version": "A new version is out: {latest} (you have {current})", "ann_open_q": "Open this link in your browser?\n{url}",
+ "ann_dismiss": "Dismiss this announcement",
 },
 "ru": {
  "tagline": "Найти → добавить в список → оценить → узнать, что читать дальше",
@@ -209,9 +223,11 @@ I18N = {
  "font_preview": "Узнайте, что читать дальше — Aa Bb 123", "font_reset": "По умолчанию", "btn_apply": "Применить",
  "about_title": "О программе",
  "about_text": "Next Book {version}\n\nБесплатный личный список чтения с открытым исходным кодом.\n{repo}\n\n"
-               "Ваши данные хранятся только на вашем компьютере:\n{path}\n\nЕдинственное сетевое подключение — к openlibrary.org при поиске.",
+               "Ваши данные хранятся только на вашем компьютере:\n{path}\n\nСетевые подключения: openlibrary.org при поиске и сервер объявлений для новостей (идентификационные данные не отправляются).",
  "crit_1": "Интерес", "crit_2": "Личная польза", "crit_3": "Лёгкость чтения",
  "crit_4": "Социальный контекст", "crit_5": "Долгосрочная ценность / справочник",
+ "ann_new_version": "Вышла новая версия: {latest} (у вас {current})", "ann_open_q": "Открыть ссылку в браузере?\n{url}",
+ "ann_dismiss": "Закрыть это объявление",
 },
 "de": {
  "tagline": "Suchen → zur Liste hinzufügen → bewerten → wissen, was als Nächstes dran ist",
@@ -263,9 +279,11 @@ I18N = {
  "font_preview": "Wissen, was als Nächstes dran ist — Aa Bb 123", "font_reset": "Standard", "btn_apply": "Anwenden",
  "about_title": "Info",
  "about_text": "Next Book {version}\n\nEine kostenlose Open-Source-Leseliste.\n{repo}\n\n"
-               "Deine Daten bleiben auf deinem Computer:\n{path}\n\nDie einzige Netzwerkverbindung geht bei der Suche zu openlibrary.org.",
+               "Deine Daten bleiben auf deinem Computer:\n{path}\n\nNetzwerkverbindungen: openlibrary.org bei der Suche und der Ankündigungsserver für Neuigkeiten (es werden keine identifizierenden Daten gesendet).",
  "crit_1": "Interesse", "crit_2": "Persönlicher Nutzen", "crit_3": "Leichte Lesbarkeit",
  "crit_4": "Sozialer Kontext", "crit_5": "Langfristiger / Referenzwert",
+ "ann_new_version": "Neue Version verfügbar: {latest} (installiert: {current})", "ann_open_q": "Link im Browser öffnen?\n{url}",
+ "ann_dismiss": "Diese Ankündigung schließen",
 },
 "fr": {
  "tagline": "Rechercher → ajouter à la liste → noter → savoir quoi lire ensuite",
@@ -317,9 +335,11 @@ I18N = {
  "font_preview": "Savoir quoi lire ensuite — Aa Bb 123", "font_reset": "Par défaut", "btn_apply": "Appliquer",
  "about_title": "À propos",
  "about_text": "Next Book {version}\n\nUne liste de lecture personnelle, gratuite et open source.\n{repo}\n\n"
-               "Vos données restent sur votre ordinateur :\n{path}\n\nLa seule connexion réseau va vers openlibrary.org lors d'une recherche.",
+               "Vos données restent sur votre ordinateur :\n{path}\n\nConnexions réseau : openlibrary.org lors d'une recherche et le serveur d'annonces pour les actualités (aucune donnée d'identification n'est envoyée).",
  "crit_1": "Intérêt", "crit_2": "Apport personnel", "crit_3": "Facilité de lecture",
  "crit_4": "Contexte social", "crit_5": "Valeur à long terme / de référence",
+ "ann_new_version": "Nouvelle version disponible : {latest} (vous avez {current})", "ann_open_q": "Ouvrir ce lien dans le navigateur ?\n{url}",
+ "ann_dismiss": "Fermer cette annonce",
 },
 "zh": {
  "tagline": "搜索 → 加入列表 → 打分 → 知道下一本读什么",
@@ -369,9 +389,11 @@ I18N = {
  "font_preview": "知道下一本读什么 — Aa Bb 123", "font_reset": "默认", "btn_apply": "应用",
  "about_title": "关于",
  "about_text": "Next Book {version}\n\n免费、开源的个人阅读清单。\n{repo}\n\n"
-               "你的数据只保存在你的电脑上：\n{path}\n\n唯一的网络连接是搜索时访问 openlibrary.org。",
+               "你的数据只保存在你的电脑上：\n{path}\n\n网络连接：搜索时访问 openlibrary.org，以及用于获取公告的公告服务器（不会发送任何身份信息）。",
  "crit_1": "兴趣程度", "crit_2": "个人收获", "crit_3": "阅读难易",
  "crit_4": "社交相关", "crit_5": "长期 / 参考价值",
+ "ann_new_version": "新版本已发布：{latest}（当前：{current}）", "ann_open_q": "在浏览器中打开此链接？\n{url}",
+ "ann_dismiss": "关闭此公告",
 },
 }
 
@@ -480,6 +502,26 @@ def score_bucket(score, smax, steps=5):
 
 def short(text, n):
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def fit_text(font, text, px):
+    """Metni px piksele sığacak şekilde sonuna … koyarak kısalt."""
+    if px <= 10 or font.measure(text) <= px:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if font.measure(text[:mid].rstrip() + "…") <= px:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo].rstrip() + "…"
+
+
+def _mix(h1, h2, t):
+    """İki #RRGGBB rengi karıştır (t=0 → h1, t=1 → h2)."""
+    a, b = _rgb(h1), _rgb(h2)
+    return "#%02X%02X%02X" % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
 # ============================================================================
@@ -601,6 +643,169 @@ def make_flag_image(code, w, h):
 
 
 # ============================================================================
+# OTOMATİK TAMAMLAMA (yazar / tür hücreleri)
+# ============================================================================
+
+def _fold(text):
+    """Büyük/küçük harf ve i/İ/ı/I farkını yok say (uzunluk değişmez)."""
+    return text.replace("İ", "i").replace("I", "i").replace("ı", "i").lower()
+
+
+def suggest_values(books, key):
+    """Listede daha önce yazılmış değerler: en sık kullanılan önce."""
+    counts = {}
+    for b in books:
+        v = (b.get(key) or "").strip()
+        if v:
+            counts[v] = counts.get(v, 0) + 1
+    return sorted(counts, key=lambda v: (-counts[v], _fold(v)))
+
+
+def attach_autocomplete(entry, get_values):
+    """Yazarken kalan kısmı seçili olarak tamamlar (Excel / tarayıcı gibi).
+    Enter / Tab / → kabul eder, yazmaya devam etmek ya da Backspace önerinin yerine geçer."""
+    def on_key(e):
+        if not e.char or not e.char.isprintable() or (e.state & 0x4):   # Ctrl kombinasyonları hariç
+            return
+        text = entry.get()
+        if not text.strip() or entry.index("insert") != len(text):
+            return
+        ft = _fold(text)
+        for v in get_values():
+            if len(v) > len(text) and _fold(v).startswith(ft):
+                entry.delete(0, "end")
+                entry.insert(0, v)
+                entry.icursor(len(text))
+                entry.selection_range(len(text), "end")
+                return
+    entry.bind("<KeyRelease>", on_key, add="+")
+    return on_key
+
+
+# ============================================================================
+# YEREL ADLI VARSAYILAN ÖLÇÜTLER
+# ============================================================================
+
+BUILTIN_KEYS = [f"crit_{i}" for i in range(1, 6)]
+
+
+def tag_builtin_criteria(criteria):
+    """Adı herhangi bir dildeki varsayılan ölçüt adıyla aynı olanları 'builtin' diye işaretle.
+    Böylece dil değişince adları otomatik yeni dile çevrilir; kullanıcının kendi
+    yazdığı / yeniden adlandırdığı ölçütlere dokunulmaz."""
+    lookup = {}
+    for d in I18N.values():
+        for k in BUILTIN_KEYS:
+            lookup.setdefault(d[k].casefold(), k)
+    for c in criteria:
+        if c.get("builtin") not in BUILTIN_KEYS:
+            c.pop("builtin", None)
+            k = lookup.get(str(c.get("name", "")).strip().casefold())
+            if k:
+                c["builtin"] = k
+    return criteria
+
+
+def localize_criteria(criteria):
+    """Varsayılan ölçütlerin adını geçerli dile çevir. Değişen bir şey olduysa True."""
+    changed = False
+    for c in criteria:
+        k = c.get("builtin")
+        if k in BUILTIN_KEYS and c.get("name") != T(k):
+            c["name"] = T(k)
+            changed = True
+    return changed
+
+
+# ============================================================================
+# DUYURULAR (tüm uygulamaların ortak duyuru dosyası)
+# ============================================================================
+
+def parse_version(v):
+    parts = re.findall(r"\d+", str(v))
+    return tuple(int(x) for x in parts[:4]) or (0,)
+
+
+def safe_url(u):
+    u = str(u or "").strip()
+    return u if u.lower().startswith("https://") and len(u) <= 500 else ""
+
+
+def _loc(value, lang):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get(lang) or value.get("en") or next((x for x in value.values() if isinstance(x, str)), "")
+    return ""
+
+
+def fetch_feed(url):
+    if not url.lower().startswith("https://"):
+        raise ValueError("announcement url must be https")
+    req = urllib.request.Request(url, headers={"User-Agent": f"NextBook/{APP_VERSION}",
+                                               "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=6) as r:
+        raw = r.read(65537)
+    if len(raw) > 65536:
+        raise ValueError("announcement feed too large")
+    return json.loads(raw.decode("utf-8"))
+
+
+def select_announcements(feed, app_id, version, lang, dismissed=(), today=None):
+    """Bu uygulama + bu sürüm + bu dil için gösterilecek duyurular (öncelik sırasıyla).
+
+    feed = {"apps": {"nextbook": {"latest": "1.3.0", "url": "https://..."}},
+            "announcements": [{"id", "apps": ["nextbook"|"*"], "min_version", "max_version",
+                               "starts", "expires", "priority", "type", "text": {"tr": "..", "en": ".."},
+                               "url"}]}"""
+    out = []
+    if not isinstance(feed, dict):
+        return out
+    today = today or datetime.date.today()
+    cur = parse_version(version)
+
+    apps = feed.get("apps")
+    info = apps.get(app_id) if isinstance(apps, dict) else None
+    if isinstance(info, dict) and info.get("latest") and parse_version(info["latest"]) > cur:
+        uid = f"update-{app_id}-{info['latest']}"
+        if uid not in dismissed:
+            out.append({"id": uid, "type": "update", "priority": 1000,
+                        "text": T("ann_new_version", latest=info["latest"], current=version),
+                        "url": safe_url(info.get("url")) or safe_url(REPO_URL + "/releases")})
+
+    items = feed.get("announcements")
+    for a in (items if isinstance(items, list) else []):
+        try:
+            if not isinstance(a, dict):
+                continue
+            aid = str(a.get("id") or "")[:80]
+            if not aid or aid in dismissed:
+                continue
+            targets = a.get("apps", ["*"])
+            targets = [targets] if isinstance(targets, str) else list(targets)
+            if "*" not in targets and app_id not in targets:
+                continue
+            if a.get("min_version") and cur < parse_version(a["min_version"]):
+                continue
+            if a.get("max_version") and cur > parse_version(a["max_version"]):
+                continue
+            if a.get("starts") and today < datetime.date.fromisoformat(str(a["starts"])):
+                continue
+            if a.get("expires") and today > datetime.date.fromisoformat(str(a["expires"])):
+                continue
+            text = " ".join(_loc(a.get("text"), lang).split())[:300]
+            if not text:
+                continue
+            kind = a.get("type") if a.get("type") in ("update", "new_app", "info") else "info"
+            out.append({"id": aid, "type": kind, "text": text, "url": safe_url(a.get("url")),
+                        "priority": int(a.get("priority", 0))})
+        except (ValueError, TypeError):
+            continue   # bozuk tek bir duyuru diğerlerini engellemesin
+    out.sort(key=lambda x: -x["priority"])   # sort kararlıdır: eşit önceliklerde dosya sırası korunur
+    return out
+
+
+# ============================================================================
 # VERİ MODELİ
 # ============================================================================
 
@@ -612,7 +817,8 @@ def default_data(lang="tr"):
     names = I18N.get(lang, I18N["en"])
     return {
         "scale_max": DEFAULT_SCALE_MAX,
-        "criteria": [{"id": new_id(), "name": names[f"crit_{i + 1}"], "weight": w}
+        "criteria": [{"id": new_id(), "name": names[f"crit_{i + 1}"], "weight": w,
+                      "builtin": f"crit_{i + 1}"}
                      for i, w in enumerate(DEFAULT_WEIGHTS)],
         "books": [],
     }
@@ -666,6 +872,7 @@ def load_data(lang="tr"):
         data.setdefault("scale_max", base["scale_max"])
         data.setdefault("criteria", base["criteria"])
         data.setdefault("books", [])
+        tag_builtin_criteria(data["criteria"])
         for b in data["books"]:
             b.setdefault("scores", {})
             b.setdefault("key", "")
@@ -901,7 +1108,7 @@ def import_excel(path):
 
     for c in criteria:
         c.pop("col")
-    return {"scale_max": scale_max, "criteria": criteria, "books": books}
+    return {"scale_max": scale_max, "criteria": tag_builtin_criteria(criteria), "books": books}
 
 
 def export_excel(data, path):
@@ -1175,7 +1382,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(self.inner, text=T("st_weight"), foreground=t["muted"]).grid(row=0, column=1, sticky="w", padx=6)
 
         for c in app.data["criteria"]:
-            self._add_row(c["id"], c["name"], c["weight"])
+            self._add_row(c["id"], c["name"], c["weight"], builtin=c.get("builtin"))
 
         center_on_parent(self, app.root, 580, 540)
         try:
@@ -1197,14 +1404,14 @@ class SettingsDialog(tk.Toplevel):
         self._add_row(new_id(), "", 1.0, focus=True)
         self.after(60, lambda: self.canvas.yview_moveto(1.0))
 
-    def _add_row(self, cid, name, weight, focus=False):
+    def _add_row(self, cid, name, weight, focus=False, builtin=None):
         name_var = tk.StringVar(value=name)
         weight_var = tk.StringVar(value=fmt_num(weight))
         weight_var.trace_add("write", lambda *_: self._update_total())
         e1 = ttk.Entry(self.inner, textvariable=name_var)
         e2 = ttk.Entry(self.inner, textvariable=weight_var, width=7)
         pct = ttk.Label(self.inner, width=5, anchor="e", foreground=self.app.theme["muted"])
-        row = {"id": cid, "name": name_var, "weight": weight_var, "pct": pct}
+        row = {"id": cid, "name": name_var, "weight": weight_var, "pct": pct, "builtin": builtin}
         btn = ttk.Button(self.inner, text="✕", width=3, command=lambda: self._remove_row(row))
         row["widgets"] = [e1, e2, pct, btn]
         self.rows.append(row)
@@ -1258,7 +1465,10 @@ class SettingsDialog(tk.Toplevel):
             except ValueError:
                 messagebox.showwarning(APP_NAME, T("st_bad_weight", name=name), parent=self)
                 return
-            criteria.append({"id": row["id"], "name": name, "weight": w})
+            c = {"id": row["id"], "name": name, "weight": w}
+            if row.get("builtin") and name == T(row["builtin"]):   # adı değiştirilmediyse dil değişince çevrilsin
+                c["builtin"] = row["builtin"]
+            criteria.append(c)
         if len({c["name"].lower() for c in criteria}) != len(criteria):
             messagebox.showwarning(APP_NAME, T("st_dup_name"), parent=self)
             return
@@ -1296,6 +1506,10 @@ class NextBookApp:
         self.flag_cache = {}
         self.results = []
         self.q = queue.Queue()
+        self.ann_feed = None
+        self.ann_idx = 0
+        self.ann_cur = None
+        self._ann_job = None
         self.edit = None
         self.sort_col = None
         self.sort_rev = False
@@ -1317,11 +1531,14 @@ class NextBookApp:
         if self.settings.get("lang") not in I18N:
             self._first_run_language()
         self.data = load_data(current_language())
+        if localize_criteria(self.data["criteria"]):   # varsayılan ölçütler arayüz diline uysun
+            self.save()
 
         self._build_ui()
         self.rebuild_columns()
         self.refresh_table()
         self._poll_queue()
+        self._announce_tick()
         root.bind("<Button-1>", self._on_root_click, add="+")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -1442,6 +1659,8 @@ class NextBookApp:
         if code not in I18N:
             return
         set_language(code)
+        if localize_criteria(self.data["criteria"]):
+            self.save()
         self._persist_settings()
         self._apply_fonts()
         self.rebuild_ui()
@@ -1449,6 +1668,7 @@ class NextBookApp:
     def rebuild_ui(self):
         """Tema / dil / yazı tipi değişince arayüzü baştan kur (veri aynı kalır)."""
         self.finish_edit(False)
+        self._cancel_ann_job()
         if self.lang_popup is not None:
             try:
                 self.lang_popup.destroy()
@@ -1485,7 +1705,19 @@ class NextBookApp:
         ttk.Button(box, text="ⓘ", width=3, style="Tool.TButton",
                    command=self.show_about).pack(side="left", padx=(6, 0))
 
-        ttk.Label(top, text="   " + T("tagline"), foreground=t["muted"]).pack(side="left", pady=(10, 0))
+        # duyuru kutusu (kırmızı alan): duyuru yoksa slogan görünür
+        self.ann_frame = tk.Frame(top, bg=t["bg"], bd=0, highlightthickness=1,
+                                  highlightbackground=t["bg"])
+        self.ann_frame.pack(side="left", fill="x", expand=True, padx=(14, 14), pady=(8, 0))
+        self.ann_close = tk.Label(self.ann_frame, text="✕", cursor="hand2", font=self.font_normal)
+        self.ann_close.pack(side="right", padx=(0, 8))
+        self.ann_label = tk.Label(self.ann_frame, anchor="w", justify="left", width=1,
+                                  font=self.font_normal)
+        self.ann_label.pack(side="left", fill="x", expand=True, padx=8, pady=3)
+        self.ann_label.bind("<Configure>", lambda _e: self._fit_announcement())
+        self.ann_label.bind("<Button-1>", lambda _e: self._on_announcement_click())
+        self.ann_close.bind("<Button-1>", lambda _e: self._dismiss_announcement())
+        self._render_announcement()
 
         # arama
         sf = ttk.Frame(r, padding=(14, 4))
@@ -1496,6 +1728,7 @@ class NextBookApp:
         e2 = ttk.Entry(sf, textvariable=self.author_var, width=30)
         e1.grid(row=1, column=0, sticky="ew")
         e2.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        attach_autocomplete(e2, lambda: suggest_values(self.data["books"], "author"))
         self.search_btn = ttk.Button(sf, text=T("btn_search"), style="Accent.TButton", command=self.do_search)
         self.search_btn.grid(row=1, column=2, padx=(8, 0))
         ttk.Button(sf, text=T("btn_clear"), command=self.clear_search).grid(row=1, column=3, padx=(6, 0))
@@ -1562,6 +1795,7 @@ class NextBookApp:
 
     # ---------------------------------------------------------------- tema noktaları
     def _build_swatches(self, parent):
+        """Her tema için tek renkli bir top (üstte hafif parlama, seçili olanın etrafında halka)."""
         t, sw = self.theme, self.SWATCH
         names = list(THEMES)
         c = tk.Canvas(parent, width=len(names) * (sw + 8) + 6, height=sw + 12, bg=t["bg"],
@@ -1571,8 +1805,10 @@ class NextBookApp:
             x0, y0 = 8 + i * (sw + 8), 6
             if name == self.theme_name:
                 c.create_oval(x0 - 4, y0 - 4, x0 + sw + 4, y0 + sw + 4, outline=t["accent"], width=2)
-            c.create_arc(x0, y0, x0 + sw, y0 + sw, start=90, extent=180, fill=th["bg"], outline=th["border"])
-            c.create_arc(x0, y0, x0 + sw, y0 + sw, start=270, extent=180, fill=th["header_bg"], outline=th["border"])
+            base = th["header_bg"]
+            c.create_oval(x0, y0, x0 + sw, y0 + sw, fill=base, outline=_mix(base, "#000000", 0.25))
+            hl = _mix(base, "#FFFFFF", 0.45)
+            c.create_oval(x0 + sw * 0.22, y0 + sw * 0.16, x0 + sw * 0.52, y0 + sw * 0.40, fill=hl, outline="")
         c.bind("<Button-1>", self._on_swatch_click)
         c.pack(side="left")
         self.swatch_canvas = c
@@ -1582,6 +1818,95 @@ class NextBookApp:
         names = list(THEMES)
         if 0 <= idx < len(names):
             self.set_theme(names[idx])
+
+    # ---------------------------------------------------------------- duyurular
+    ANN_ICON = {"update": "⬆", "new_app": "★", "info": "ℹ"}
+
+    def _announce_tick(self):
+        """Duyuru dosyasını arka planda çek; açık kaldığı sürece periyodik tekrarla."""
+        if ANNOUNCE_URL and self.settings.get("announcements", True):
+            threading.Thread(target=self._announce_worker, daemon=True).start()
+        self.root.after(ANNOUNCE_REFRESH_MS, self._announce_tick)
+
+    def _announce_worker(self):
+        try:
+            self.q.put(("ann", fetch_feed(ANNOUNCE_URL)))
+        except Exception:
+            pass   # çevrimdışı / sunucu yok: sessizce slogan görünmeye devam eder
+
+    def _active_announcements(self):
+        if not self.ann_feed or not self.settings.get("announcements", True):
+            return []
+        dismissed = set(self.settings.get("dismissed_ann", []))
+        return select_announcements(self.ann_feed, APP_ID, APP_VERSION, current_language(), dismissed)
+
+    def _cancel_ann_job(self):
+        if self._ann_job is not None:
+            try:
+                self.root.after_cancel(self._ann_job)
+            except tk.TclError:
+                pass
+            self._ann_job = None
+
+    def _render_announcement(self):
+        try:
+            if not self.ann_label.winfo_exists():
+                return
+        except (AttributeError, tk.TclError):
+            return
+        self._cancel_ann_job()
+        t = self.theme
+        items = self._active_announcements()
+        if not items:
+            self.ann_cur = None
+            self.ann_full = "   " + T("tagline")
+            self.ann_frame.configure(bg=t["bg"], highlightbackground=t["bg"])
+            self.ann_label.configure(bg=t["bg"], fg=t["muted"], cursor="", font=self.font_normal)
+            self.ann_close.pack_forget()
+        else:
+            self.ann_idx %= len(items)
+            cur = self.ann_cur = items[self.ann_idx]
+            bg = t["ramp"][1]
+            self.ann_full = f'{self.ANN_ICON[cur["type"]]}  {cur["text"]}'
+            self.ann_frame.configure(bg=bg, highlightbackground=t["accent"])
+            self.ann_label.configure(bg=bg, fg=t["text"], cursor="hand2", font=self.font_head)
+            self.ann_close.configure(bg=bg, fg=t["muted"])
+            if not self.ann_close.winfo_ismapped():
+                self.ann_close.pack(side="right", padx=(0, 8), before=self.ann_label)
+            if len(items) > 1:
+                self._ann_job = self.root.after(ANNOUNCE_ROTATE_MS, self._next_announcement)
+        self._fit_announcement()
+
+    def _fit_announcement(self):
+        try:
+            font = tkfont.Font(font=self.ann_label.cget("font"))
+            self.ann_label.configure(text=fit_text(font, self.ann_full, self.ann_label.winfo_width() - 16))
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _next_announcement(self):
+        self._ann_job = None
+        self.ann_idx += 1
+        self._render_announcement()
+
+    def _on_announcement_click(self):
+        cur = self.ann_cur
+        if not cur:
+            return
+        if cur["url"]:
+            if messagebox.askyesno(APP_NAME, cur["text"] + "\n\n" + T("ann_open_q", url=cur["url"])):
+                webbrowser.open(cur["url"])
+        else:
+            messagebox.showinfo(APP_NAME, cur["text"])
+
+    def _dismiss_announcement(self):
+        if not self.ann_cur:
+            return
+        ids = list(self.settings.get("dismissed_ann", []))
+        ids.append(self.ann_cur["id"])
+        self.settings["dismissed_ann"] = ids[-300:]
+        self._persist_settings()
+        self._render_announcement()
 
     # ---------------------------------------------------------------- dil açılır penceresi
     def toggle_lang_popup(self):
@@ -1695,6 +2020,9 @@ class NextBookApp:
 
     def rebuild_columns(self):
         ids = self.col_ids()
+        # Önce görünür sütun listesini sıfırla: silinen ölçütün eski sütununa
+        # başvuru kalırsa Tk "Invalid column index" hatası verir.
+        self.tree["displaycolumns"] = "#all"
         self.tree["columns"] = ids
         self.tree["displaycolumns"] = ids
         self.update_headings()
@@ -1859,6 +2187,10 @@ class NextBookApp:
         try:
             while True:
                 kind, payload = self.q.get_nowait()
+                if kind == "ann":
+                    self.ann_feed = payload
+                    self._render_announcement()
+                    continue
                 try:
                     self.search_btn.config(state="normal")
                 except tk.TclError:
@@ -2001,6 +2333,9 @@ class NextBookApp:
         entry.select_range(0, "end")
         entry.place(x=x, y=y, width=w, height=h)
         entry.focus_set()
+        if cid in ("author", "genre"):   # daha önce yazılanları öner
+            vals = suggest_values(self.data["books"], cid)
+            attach_autocomplete(entry, lambda v=vals: v)
         self.edit = {"iid": iid, "idx": idx, "cid": cid, "entry": entry}
         entry.bind("<Return>", lambda _e: self._commit_and_move(1, 0))
         entry.bind("<Tab>", lambda _e: self._commit_and_move(0, 1))
