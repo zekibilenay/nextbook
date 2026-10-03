@@ -32,7 +32,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 REPO_URL = "https://github.com/zekiyildirimboun/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
 DATA_FILE = DATA_DIR / "next_book.json"
