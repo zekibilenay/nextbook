@@ -1,0 +1,54 @@
+name: Windows surumunu derle
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bagimliliklari kur
+        run: pip install -r requirements.txt
+
+      - name: Derle
+        run: pyinstaller --onedir --windowed --name NextBook --hidden-import openpyxl next_book.py
+
+      - name: Zip ve SHA256 olustur
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/NextBook -DestinationPath NextBook-windows.zip
+          $h = (Get-FileHash NextBook-windows.zip -Algorithm SHA256).Hash.ToLower()
+          "$h  NextBook-windows.zip" | Out-File -Encoding ascii NextBook-windows.zip.sha256
+
+      - name: Uretim kaydi ekle
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: NextBook-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NextBook-windows
+          path: |
+            NextBook-windows.zip
+            NextBook-windows.zip.sha256
+
+      - name: Release'e ekle
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            NextBook-windows.zip
+            NextBook-windows.zip.sha256
