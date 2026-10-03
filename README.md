@@ -48,19 +48,25 @@ Tüm uygulamalar aynı JSON dosyasını okuyabilir (GitHub Pages, kendi sunucun,
 Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL` ortam değişkeniyle) ayarla. Yalnızca HTTPS kabul edilir.
 
 - `apps.<uygulama>.latest`: kullanıcının sürümü bundan eskiyse otomatik "yeni sürüm" duyurusu çıkar.
-- `announcements[]`: `id` (benzersiz ad), `apps` (`["*"]` = hepsi), `min_version` / `max_version`, `starts` / `expires` (`YYYY-AA-GG`), `priority` (büyük olan önce), `type` (`update` · `new_app` · `info`), `text`, `url` (isteğe bağlı, yalnızca https).
+- `announcements[]`: `id` (benzersiz ad), `apps` (`["*"]` = hepsi), `min_version` / `max_version`, `starts` / `expires` (`YYYY-AA-GG`), `priority` (büyük olan önce), `type` (`update` · `new_app` · `recommended` · `info`), `text`, `url` (isteğe bağlı, yalnızca https).
 - **Çok dilli metin / Multilingual text:** `text` dil koduyla yazılır: `tr`, `en`, `ru`, `de`, `fr`, `zh` (`zh-CN` gibi bölgeli yazımlar da kabul edilir). Kullanıcının dilinde metin yoksa `en`, o da yoksa dosyadaki ilk metin gösterilir; bu yüzden her duyuruya en azından `en` ekle. Metin en fazla 600 karakterdir. / Write `text` per language code; if the user's language is missing, `en` is used, then the first available text. Always include `en`. Max 600 characters.
 - **Kapatılamaz / Not dismissible:** Kullanıcı duyuruyu kapatamaz. Eski duyuruların kalkması için `expires` kullan veya duyuruyu dosyadan sil. / Users cannot dismiss announcements, so use `expires` or remove the entry to retire one.
+- **Duyuru türleri / Types:** `update` (yukarı ok), `new_app` (yıldız), `recommended` (kalp; "önerilen uygulama"), `info` (i). Simgeler yazı tipi karakteri değil, kodla çizilir; bu yüzden her bilgisayarda aynı ve tam ortalı görünür ve temaya uyar. Bilinmeyen bir tür yazarsan `info` sayılır. / The icons are drawn in code (not font glyphs), so they look identical and perfectly centred everywhere and follow the theme. An unknown type counts as `info`.
+- **Uygulamaya özel duyuru / Per-app targeting:** `apps` alanı hangi uygulamaların göreceğini belirler: `["*"]` hepsi, `["nextbook"]` yalnızca Next Book, `["nextbook", "bilenay-reader"]` ikisi de. / `apps` decides which apps show an announcement.
 - **Pano / Board:** Başlıktaki kutu duyuruları sırayla gösterir (birden fazlaysa `1/3 ›` gibi). Kutuya tıklayınca tüm duyurular panoda kartlar halinde açılır; `url` olan kartlarda bağlantı, kullanıcıya sorulduktan sonra açılır. / The header box rotates through announcements; clicking it opens a board with every announcement as a card. Links open only after the user confirms.
 
 ## Sürüm yayınlama / Releasing
 ```
-git tag v1.4.0
+git tag v1.4.1
 git push --tags
 ```
 GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki `apps.nextbook.latest` değerini güncelle. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, update `apps.nextbook.latest` in the feed.
 
 ## Değişiklikler / Changelog
+
+### 1.4.1
+- **TR:** Yeni duyuru türü `recommended` ("önerilen uygulama", kalp simgesi). Duyuru simgeleri yazı tipi karakteri yerine kodla çizilen, kenarları yumuşatılmış rozetler oldu; "i" simgesinin aşağı kaçması sorunu giderildi. Duyurular uygulamaya göre hedeflenebiliyor (`apps` alanı). Eski sürümleri kullananlara "yeni sürüm" duyurusu gösteriliyor.
+- **EN:** New announcement type `recommended` ("recommended app", heart icon). Announcement icons are now anti-aliased badges drawn in code instead of font glyphs, which fixes the misaligned "i" icon. Announcements can be targeted per app (`apps` field). People on older versions get a "new version" announcement.
 
 ### 1.4.0
 - **TR:** Duyuru kutusu artık kapatılamıyor; üstüne gelince vurgulanıyor, tıklayınca duyuru panosu açılıyor. Duyurular 6 dilde gösteriliyor (bölgeli kodlar ve dil yedekleri dahil). Başlıktaki "Ara → listeye ekle → ..." kılavuz yazısı kaldırıldı. Yazı tipi seçici bilinen 10 yazı tipine indirildi (daha önce listede olmayan bir yazı tipi seçtiysen varsayılana döner). Puanlanmamış kitaplar artık soluk/italik değil, normal yazıyla gösteriliyor (Excel çıktısında da). "Hakkında" artık düz bir kutu yerine tema renklerine uyan bir bilgi kartı. Bir duyuru metni 300 yerine en fazla 600 karakter olabiliyor.

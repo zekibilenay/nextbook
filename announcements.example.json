@@ -2,58 +2,79 @@
   "schema": 1,
   "apps": {
     "nextbook": {
-      "latest": "1.4.0",
+      "latest": "1.4.1",
       "url": "https://github.com/zekibilenay/nextbook/releases/latest"
     }
   },
   "announcements": [
     {
-      "id": "bilenay-reader-deneyin-2026-10",
-      "apps": ["*"],
-      "type": "new_app",
-      "priority": 3,
-      "expires": "2026-12-31",
-      "text": {
-        "tr": "Bilenay Reader'ı denemeyi unutmayın!",
-        "en": "Don't forget to try Bilenay Reader!",
-        "ru": "Не забудьте попробовать Bilenay Reader!",
-        "de": "Probiere unbedingt Bilenay Reader aus!",
-        "fr": "N'oubliez pas d'essayer Bilenay Reader !",
-        "zh": "别忘了试试 Bilenay Reader！"
-      },
-      "url": "https://example.com/bilenay-reader"
-    },
-    {
-      "id": "nextbook-1-4-0-notes",
-      "apps": ["nextbook"],
-      "max_version": "1.3.1",
+      "id": "nextbook-yeni-surum-1-4-1",
+      "apps": [
+        "nextbook"
+      ],
+      "max_version": "1.4.0",
       "type": "update",
-      "priority": 2,
+      "priority": 5,
       "text": {
-        "tr": "Next Book 1.4.0 geldi: duyuru panosu, yeni hakkında kartı ve sadeleştirilmiş yazı tipi listesi.",
-        "en": "Next Book 1.4.0 is here: announcement board, a new About card and a simpler font list.",
-        "ru": "Вышел Next Book 1.4.0: панель объявлений, новая карточка «О программе» и более простой список шрифтов.",
-        "de": "Next Book 1.4.0 ist da: Ankündigungsboard, neue Info-Karte und eine schlankere Schriftenliste.",
-        "fr": "Next Book 1.4.0 est disponible : tableau d'annonces, nouvelle fiche À propos et liste de polices simplifiée.",
-        "zh": "Next Book 1.4.0 发布：新增公告面板、全新的“关于”卡片，字体列表也更简洁。"
+        "tr": "Next Book'un yeni sürümü yayında! Güncelleyip yeniliklere göz atmaya ne dersin?",
+        "en": "A new version of Next Book is out! How about updating and taking a look at what's new?",
+        "ru": "Вышла новая версия Next Book! Почему бы не обновиться и не посмотреть, что нового?",
+        "de": "Eine neue Version von Next Book ist da! Wie wäre es mit einem Update, um die Neuerungen zu entdecken?",
+        "fr": "Une nouvelle version de Next Book est disponible ! Et si vous mettiez à jour pour découvrir les nouveautés ?",
+        "zh": "Next Book 有新版本啦！要不要更新一下，看看有什么新变化？"
       },
       "url": "https://github.com/zekibilenay/nextbook/releases/latest"
     },
     {
-      "id": "welcome-2026-10",
-      "apps": ["*"],
-      "type": "info",
-      "priority": 0,
-      "starts": "2026-10-03",
-      "expires": "2026-12-31",
+      "id": "nextbook-bilenay-reader-onerisi",
+      "apps": [
+        "nextbook"
+      ],
+      "type": "recommended",
+      "priority": 4,
       "text": {
-        "tr": "Next Book'a hoş geldin! Yeni sürümler ve yeni uygulamalar burada duyurulacak.",
-        "en": "Welcome to Next Book! News about new versions and apps will show up here.",
-        "ru": "Добро пожаловать в Next Book! Здесь будут новости о новых версиях и приложениях.",
-        "de": "Willkommen bei Next Book! Hier erscheinen Neuigkeiten zu neuen Versionen und Apps.",
-        "fr": "Bienvenue dans Next Book ! Les nouveautés sur les versions et les applications apparaîtront ici.",
-        "zh": "欢迎使用 Next Book！新版本和新应用的消息会显示在这里。"
-      }
+        "tr": "Okurken not almak ve odaklanmak için sıcacık bir yer: Bilenay Reader'a göz atmak ister misin?",
+        "en": "A cozy place to read, take notes and stay focused: care to take a peek at Bilenay Reader?",
+        "ru": "Уютное место, чтобы читать, делать заметки и сосредоточиться: заглянете в Bilenay Reader?",
+        "de": "Ein gemütlicher Ort zum Lesen, Notieren und Konzentrieren: Magst du Bilenay Reader mal ausprobieren?",
+        "fr": "Un petit coin douillet pour lire, prendre des notes et rester concentré : un coup d'œil à Bilenay Reader ?",
+        "zh": "一个温暖的阅读、记笔记、保持专注的小天地：要不要来看看 Bilenay Reader？"
+      },
+      "url": "https://bilenay.itch.io/bilenay-reader"
+    },
+    {
+      "id": "tum-uygulamalar-itch-io",
+      "apps": [
+        "*"
+      ],
+      "type": "info",
+      "priority": 3,
+      "text": {
+        "tr": "Bizi itch.io'da bulabilirsin: uğra, takip et, bir yorum bırak. Her sözün bizim için çok değerli!",
+        "en": "Find us on itch.io: drop by, follow us and leave a comment. Every word means a lot to us!",
+        "ru": "Мы на itch.io: заглядывайте, подписывайтесь и оставляйте комментарии. Каждое слово для нас очень ценно!",
+        "de": "Du findest uns auf itch.io: Schau vorbei, folge uns und hinterlasse einen Kommentar. Jedes Wort bedeutet uns viel!",
+        "fr": "Retrouvez-nous sur itch.io : passez nous voir, suivez-nous et laissez un commentaire. Chaque mot compte pour nous !",
+        "zh": "欢迎来 itch.io 找我们：逛逛、关注，再留下一条评论吧。你的每一句话对我们都很珍贵！"
+      },
+      "url": "https://bilenay.itch.io/"
+    },
+    {
+      "id": "nextbook-goodreads-grubu",
+      "apps": [
+        "nextbook"
+      ],
+      "type": "info",
+      "priority": 2,
+      "text": {
+        "tr": "Okumayı birlikte sevelim! Goodreads okuma grubumuza gel, okuduklarını bizimle paylaş.",
+        "en": "Reading is better together! Join our Goodreads group and share what you're reading.",
+        "ru": "Читать вместе веселее! Присоединяйтесь к нашей группе на Goodreads и делитесь тем, что читаете.",
+        "de": "Gemeinsam lesen macht mehr Spaß! Komm in unsere Goodreads-Gruppe und erzähl uns, was du liest.",
+        "fr": "Lire, c'est mieux à plusieurs ! Rejoignez notre groupe Goodreads et partagez vos lectures.",
+        "zh": "一起读书更有趣！来我们的 Goodreads 小组，和大家分享你正在读的书吧。"
+      },
+      "url": "https://www.goodreads.com/group/show/7270991-bilenay-reading-room"
     }
   ]
 }

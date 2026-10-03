@@ -35,7 +35,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
@@ -121,6 +121,7 @@ I18N = {
  "ann_empty": "Şu an duyuru yok.",
  "ann_type_update": "Güncelleme",
  "ann_type_new_app": "Yeni uygulama",
+ "ann_type_recommended": "Önerilen uygulama",
  "ann_type_info": "Bilgi",
  "ann_open": "Bağlantıyı aç",
  "btn_close": "Kapat",
@@ -185,6 +186,7 @@ I18N = {
  "ann_empty": "No announcements right now.",
  "ann_type_update": "Update",
  "ann_type_new_app": "New app",
+ "ann_type_recommended": "Recommended app",
  "ann_type_info": "Info",
  "ann_open": "Open link",
  "btn_close": "Close",
@@ -249,6 +251,7 @@ I18N = {
  "ann_empty": "Сейчас объявлений нет.",
  "ann_type_update": "Обновление",
  "ann_type_new_app": "Новое приложение",
+ "ann_type_recommended": "Рекомендуемое приложение",
  "ann_type_info": "Информация",
  "ann_open": "Открыть ссылку",
  "btn_close": "Закрыть",
@@ -313,6 +316,7 @@ I18N = {
  "ann_empty": "Derzeit keine Ankündigungen.",
  "ann_type_update": "Update",
  "ann_type_new_app": "Neue App",
+ "ann_type_recommended": "Empfohlene App",
  "ann_type_info": "Info",
  "ann_open": "Link öffnen",
  "btn_close": "Schließen",
@@ -377,6 +381,7 @@ I18N = {
  "ann_empty": "Aucune annonce pour le moment.",
  "ann_type_update": "Mise à jour",
  "ann_type_new_app": "Nouvelle application",
+ "ann_type_recommended": "Application recommandée",
  "ann_type_info": "Info",
  "ann_open": "Ouvrir le lien",
  "btn_close": "Fermer",
@@ -439,6 +444,7 @@ I18N = {
  "ann_empty": "目前没有公告。",
  "ann_type_update": "更新",
  "ann_type_new_app": "新应用",
+ "ann_type_recommended": "推荐应用",
  "ann_type_info": "信息",
  "ann_open": "打开链接",
  "btn_close": "关闭",
@@ -696,6 +702,84 @@ def make_flag_image(code, w, h):
 
 
 # ============================================================================
+# DUYURU SİMGELERİ (yazı tipi karakteri yerine çizilir: her bilgisayarda aynı ve tam ortalı)
+# ============================================================================
+
+ANN_TYPES = ("update", "new_app", "recommended", "info")
+
+
+def ann_icon_colors(t, kind):
+    """(daire rengi, simge rengi) — temaya uyar."""
+    return {"update": (t["accent"], t["accent_fg"]),
+            "new_app": (t["header_bg"], t["header_fg"]),
+            "recommended": (t["label_frame"], t["bg"])}.get(kind, (t["muted"], t["bg"]))
+
+
+def _in_poly(x, y, pts):
+    inside, j = False, len(pts) - 1
+    for i in range(len(pts)):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def ann_icon_rows(kind, size, fill, glyph, bg):
+    """Yuvarlak rozet: info = i, update = yukarı ok, new_app = yıldız, recommended = kalp.
+    4x4 alt örnekleme ile kenarlar yumuşatılır; satırlar '#rrggbb' dizileridir."""
+    S = float(size)
+    c = S / 2.0
+    R = S / 2.0 - 0.5
+    star = _star_points(c, c + S * 0.015, S * 0.30, 90)
+    hs = S * 0.2368
+
+    def in_glyph(x, y):
+        if kind == "info":
+            return ((x - c) ** 2 + (y - S * 0.31) ** 2 <= (S * 0.065) ** 2
+                    or (abs(x - c) <= S * 0.065 and S * 0.45 <= y <= S * 0.76))
+        if kind == "update":
+            if abs(x - c) <= S * 0.07 and S * 0.48 <= y <= S * 0.76:
+                return True
+            return S * 0.24 <= y <= S * 0.50 and abs(x - c) <= (y - S * 0.24) * 0.21 / 0.26
+        if kind == "new_app":
+            return _in_poly(x, y, star)
+        hx, hy = (x - c) / hs, -(y - c) / hs + 0.125      # recommended: kalp eğrisi
+        return (hx * hx + hy * hy - 1) ** 3 - hx * hx * hy ** 3 <= 0
+
+    cf, cg, cb = _rgb(fill), _rgb(glyph), _rgb(bg)
+    n, rows = 4, []
+    for py in range(size):
+        row = []
+        for px in range(size):
+            r = g = b = 0
+            for sy in range(n):
+                for sx in range(n):
+                    x, y = px + (sx + 0.5) / n, py + (sy + 0.5) / n
+                    if (x - c) ** 2 + (y - c) ** 2 > R * R:
+                        col = cb
+                    elif in_glyph(x, y):
+                        col = cg
+                    else:
+                        col = cf
+                    r += col[0]
+                    g += col[1]
+                    b += col[2]
+            k = n * n
+            row.append("#%02x%02x%02x" % (round(r / k), round(g / k), round(b / k)))
+        rows.append(row)
+    return rows
+
+
+def make_ann_icon(kind, size, fill, glyph, bg):
+    img = tk.PhotoImage(width=size, height=size)
+    rows = ann_icon_rows(kind, size, fill, glyph, bg)
+    img.put(" ".join("{" + " ".join(r) + "}" for r in rows))
+    return img
+
+
+# ============================================================================
 # OTOMATİK TAMAMLAMA (yazar / tür hücreleri)
 # ============================================================================
 
@@ -864,7 +948,7 @@ def select_announcements(feed, app_id, version, lang, dismissed=(), today=None):
             text = " ".join(_loc(a.get("text"), lang).split())[:600]
             if not text:
                 continue
-            kind = a.get("type") if a.get("type") in ("update", "new_app", "info") else "info"
+            kind = a.get("type") if a.get("type") in ANN_TYPES else "info"
             out.append({"id": aid, "type": kind, "text": text, "url": safe_url(a.get("url")),
                         "priority": int(a.get("priority", 0))})
         except (ValueError, TypeError):
@@ -1479,15 +1563,21 @@ class AnnouncementBoard(tk.Toplevel):
                            justify="left", anchor="w", wraplength=480)
             msg.pack(fill="x", pady=20)
             self.labels.append(msg)
-        bars = {"update": t["accent"], "new_app": t["header_bg"], "info": t["muted"]}
+        icon_px = max(14, round(app.font_normal.metrics("linespace") * 0.95))
         for a in items:
+            kind = a["type"] if a["type"] in ANN_TYPES else "info"
+            fill, glyph = ann_icon_colors(t, kind)
             card = tk.Frame(self.inner, bg=t["field"], highlightthickness=1, highlightbackground=t["border"])
             card.pack(fill="x", pady=(0, 10), padx=(0, 6))
-            tk.Frame(card, bg=bars.get(a["type"], t["muted"]), width=5).pack(side="left", fill="y")
+            tk.Frame(card, bg=fill, width=5).pack(side="left", fill="y")
             body = tk.Frame(card, bg=t["field"])
             body.pack(side="left", fill="both", expand=True, padx=14, pady=10)
-            tk.Label(body, text=f'{app.ANN_ICON.get(a["type"], "")}  {T("ann_type_" + a["type"])}', font=small,
-                     bg=t["field"], fg=t["muted"], anchor="w").pack(fill="x")
+            row = tk.Frame(body, bg=t["field"])
+            row.pack(fill="x")
+            tk.Label(row, image=app.ann_icon_img(kind, fill, glyph, t["field"], icon_px),
+                     bg=t["field"], bd=0).pack(side="left")
+            tk.Label(row, text=T("ann_type_" + kind), font=small, bg=t["field"], fg=t["muted"],
+                     anchor="w").pack(side="left", padx=(8, 0))
             msg = tk.Label(body, text=a["text"], font=app.font_normal, bg=t["field"], fg=t["field_fg"],
                            justify="left", anchor="w", wraplength=480)
             msg.pack(fill="x", pady=(4, 0))
@@ -1766,6 +1856,7 @@ class NextBookApp:
         set_language(self.settings.get("lang") if self.settings.get("lang") in I18N else "en")
 
         self.flag_cache = {}
+        self.icon_cache = {}
         self.results = []
         self.q = queue.Queue()
         self.ann_feed = None
@@ -1979,11 +2070,13 @@ class NextBookApp:
             self.ann_frame.pack(side="left", fill="x", expand=True, padx=(14, 14), pady=(8, 0))
         self.ann_more = tk.Label(self.ann_frame, text="›", font=self.font_head, cursor="hand2")
         self.ann_more.pack(side="right", padx=(0, 10))
+        self.ann_icon = tk.Label(self.ann_frame, bd=0, cursor="hand2")
+        self.ann_icon.pack(side="left", padx=(10, 0))
         self.ann_label = tk.Label(self.ann_frame, anchor="w", justify="left", width=1,
                                   font=self.font_normal, cursor="hand2")
         self.ann_label.pack(side="left", fill="x", expand=True, padx=8, pady=3)
         self.ann_label.bind("<Configure>", lambda _e: self._fit_announcement())
-        for w in (self.ann_frame, self.ann_label, self.ann_more):
+        for w in (self.ann_frame, self.ann_icon, self.ann_label, self.ann_more):
             w.bind("<Button-1>", lambda _e: self.open_announcement_board())
             w.bind("<Enter>", self._ann_enter)
             w.bind("<Leave>", self._ann_leave)
@@ -2090,7 +2183,13 @@ class NextBookApp:
             self.set_theme(names[idx])
 
     # ---------------------------------------------------------------- duyurular
-    ANN_ICON = {"update": "⬆", "new_app": "★", "info": "ℹ"}
+    def ann_icon_img(self, kind, fill, glyph, bg, size=None):
+        """Duyuru simgesi (önbellekli; PhotoImage'lar bellekte tutulmazsa ekrandan kaybolur)."""
+        size = size or max(16, round(self.font_head.metrics("linespace") * 0.95))
+        key = (kind, size, fill, glyph, bg)
+        if key not in self.icon_cache:
+            self.icon_cache[key] = make_ann_icon(kind, size, fill, glyph, bg)
+        return self.icon_cache[key]
 
     def _announce_tick(self):
         """Duyuru dosyasını arka planda çek; açık kaldığı sürece periyodik tekrarla."""
@@ -2128,12 +2227,12 @@ class NextBookApp:
         if not items:
             self.ann_idx = 0
             self.ann_cur = None
-            self.ann_full = f'{self.ANN_ICON["info"]}  {T("ann_empty")}'
+            self.ann_full = T("ann_empty")
             more = "›"
         else:
             self.ann_idx %= len(items)
             cur = self.ann_cur = items[self.ann_idx]
-            self.ann_full = f'{self.ANN_ICON[cur["type"]]}  {cur["text"]}'
+            self.ann_full = cur["text"]
             more = f"{self.ann_idx + 1}/{len(items)}  ›" if len(items) > 1 else "›"
             if len(items) > 1:
                 self._ann_job = self.root.after(ANNOUNCE_ROTATE_MS, self._next_announcement)
@@ -2151,8 +2250,11 @@ class NextBookApp:
         base = t["ramp"][1] if has else t["bg"]
         bg = _mix(base, t["accent"], 0.22) if self._ann_over else base
         edge = t["accent"] if (has or self._ann_over) else t["border"]
+        kind = self.ann_cur["type"] if has else "info"
+        fill, glyph = ann_icon_colors(t, kind)
         try:
             self.ann_frame.configure(bg=bg, highlightbackground=edge)
+            self.ann_icon.configure(bg=bg, image=self.ann_icon_img(kind, fill, glyph, bg))
             self.ann_label.configure(bg=bg, fg=t["text"] if has else t["muted"],
                                      font=self.font_head if has else self.font_normal)
             self.ann_more.configure(bg=bg, fg=t["muted"])
