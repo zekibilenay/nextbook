@@ -35,7 +35,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.3"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"

@@ -3,11 +3,11 @@
   "apps": {},
   "announcements": [
     {
-      "id": "nextbook-yeni-surum-1-4-1",
+      "id": "nextbook-yeni-surum-1-4-3",
       "apps": [
         "nextbook"
       ],
-      "max_version": "1.4.0",
+      "max_version": "1.4.2",
       "type": "update",
       "priority": 5,
       "text": {

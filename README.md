@@ -57,14 +57,16 @@ Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL
 
 ## Sürüm yayınlama / Releasing
 ```
-git tag v1.4.1
+git tag v1.4.3
 git push --tags
 ```
-GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.2 çıkınca `1.4.1`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.1` when 1.4.2 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
+GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.4 çıkınca `1.4.3`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.3` when 1.4.4 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
 
 ## Değişiklikler / Changelog
 
-### 1.4.1
+### 1.4.3
+_(1.4.1 ve 1.4.2 numaraları yayın sırasında atlandı. / Version numbers 1.4.1 and 1.4.2 were skipped while releasing.)_
+
 - **TR:** Yeni duyuru türü `recommended` ("önerilen uygulama", kalp simgesi). Duyuru simgeleri yazı tipi karakteri yerine kodla çizilen, kenarları yumuşatılmış rozetler oldu; "i" simgesinin aşağı kaçması sorunu giderildi. Duyurular uygulamaya göre hedeflenebiliyor (`apps` alanı). Eski sürümleri kullananlara "yeni sürüm" duyurusu gösteriliyor.
 - **EN:** New announcement type `recommended` ("recommended app", heart icon). Announcement icons are now anti-aliased badges drawn in code instead of font glyphs, which fixes the misaligned "i" icon. Announcements can be targeted per app (`apps` field). People on older versions get a "new version" announcement.
 
