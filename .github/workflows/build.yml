@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Derle
-        run: pyinstaller --onedir --windowed --name NextBook --hidden-import openpyxl next_book.py
+        run: pyinstaller --onedir --windowed --name NextBook --icon next_book.ico --add-data "next_book.ico;." --hidden-import openpyxl next_book.py
 
       - name: Zip ve SHA256 olustur
         shell: pwsh
