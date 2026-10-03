@@ -16,7 +16,7 @@ Okuyacağın kitapları kendi ölçütlerine göre puanlayıp kişisel bir okuma
 Uygulama henüz dijital olarak imzalanmadığı için Windows SmartScreen "Bilinmeyen yayıncı" uyarısı gösterebilir. **Daha fazla bilgi → Yine de çalıştır** diyebilirsin. Güvenmek zorunda değilsin, kontrol edebilirsin:
 
 1. **Kaynak kod açık:** `next_book.py` tek dosyadır, okuyabilirsin.
-2. **Exe'yi bu depo derler:** Release dosyası, GitHub Actions ile bu koddan otomatik üretilir (`.github/workflows/build.yml`). Doğrulamak için: `gh attestation verify NextBook-windows.zip --repo KULLANICI/DEPO`
+2. **Exe'yi bu depo derler:** Release dosyası, GitHub Actions ile bu koddan otomatik üretilir (`.github/workflows/build.yml`). Doğrulamak için: `gh attestation verify NextBook-windows.zip --repo zekiyildirimboun/nextbook`
 3. **Sağlama toplamı:** PowerShell'de `Get-FileHash NextBook-windows.zip` çıktısı, release'teki `.sha256` dosyasıyla aynı olmalı.
 4. **Hiç exe istemiyorsan:** Python 3.9+ kurulu ise `python next_book.py` ile doğrudan çalıştır.
 
