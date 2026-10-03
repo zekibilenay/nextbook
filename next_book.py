@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Next Book — kişisel okuma önceliklendirme listesi (Windows masaüstü uygulaması)
+Next Book — personal reading-priority list (Windows desktop app)
 
-* Open Library'den sadece kitap adı, yazar, tür ve sayfa sayısı çekilir.
-* Kitap listede tek bir satır olur. Puanlanmamış satırlar soluk/italik,
-  puanlanınca koyu görünür (Excel'deki gibi).
-* Puanlama ölçütleri ve ağırlıkları kullanıcı tarafından serbestçe ayarlanır.
-* Excel'den içe aktarma / Excel'e dışa aktarma (openpyxl kuruluysa).
+* Searches Open Library for title, author, genre and page count only.
+* Each book becomes one row. Unscored rows are faded; scored rows get
+  more intense the higher the score.
+* Scoring criteria and their weights are fully user-defined.
+* 6 languages, 6 colour themes, font choice, Excel import/export.
 
-Gereksinimler: Python 3.9+ (tkinter Windows kurulumuyla birlikte gelir)
-İsteğe bağlı : pip install openpyxl   (Excel içe/dışa aktarma için)
-Çalıştırma   : python next_book.py
+Requires : Python 3.9+ (tkinter ships with the Windows installer)
+Optional : pip install openpyxl   (Excel import/export)
+Run      : python next_book.py
 """
 
 import ctypes
 import json
+import math
 import os
 import queue
 import re
@@ -32,31 +33,435 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 REPO_URL = "https://github.com/zekiyildirimboun/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
 DATA_FILE = DATA_DIR / "next_book.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"     # dil / tema / yazı tipi (veriden ayrı)
 
-# Varsayılan ölçütler (Excel dosyasındaki Ayarlar sayfasıyla aynı)
-DEFAULT_CRITERIA = [
-    ("İlgi Düzeyi", 0.30),
-    ("Kişisel Katkı", 0.30),
-    ("Okuma Kolaylığı", 0.15),
-    ("Sosyal Bağlam", 0.10),
-    ("Uzun Vadeli / Referans Değeri", 0.15),
-]
+DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
 DEFAULT_SCALE_MAX = 5
 
-# Renk teması: "kütüphane katalog çekmecesi" — krem zemin, lacivert başlık, hardal vurgu
-BG = "#F5F0E6"            # pencere zemini (krem)
-TEXT = "#2B2B2B"
-BORDER = "#D5CBB2"
-HEADER_BG = "#1F3A5F"     # lacivert
-ACCENT = "#C8962E"        # hardal
-UNSCORED_FG = "#9AA3B2"   # puansız satır: soluk gri, italik
-SCORED_FG = "#143020"     # puanlı satır: koyu yeşil-siyah yazı
-# Skor yükseldikçe satır yosun yeşiline doğru koyulaşır (düşük → yüksek)
-SCORE_RAMP = ["#EAF2E6", "#D6E7D0", "#C0DAB8", "#A8CC9F", "#8FBC85"]
+
+# ============================================================================
+# ÇOK DİLLİLİK
+# ============================================================================
+
+LANGS = [("tr", "Türkçe"), ("en", "English"), ("ru", "Русский"),
+         ("de", "Deutsch"), ("fr", "Français"), ("zh", "中文")]
+
+I18N = {
+"tr": {
+ "tagline": "Ara → listeye ekle → puanla → okuma sırası belli olsun",
+ "lbl_title": "Kitap adı", "lbl_author": "Yazar (isteğe bağlı)",
+ "btn_search": "Ara", "btn_clear": "Temizle", "btn_manual": "+ Elle ekle",
+ "results_title": " Arama sonuçları — eklemek için çift tıkla ",
+ "btn_add_to_list": "Listeye ekle", "list_title": " Okuma listem ",
+ "btn_settings": "⚙ Puanlama ayarları", "btn_sort_score": "Puana göre sırala",
+ "btn_delete": "Seçileni sil", "btn_import": "Excel'den içe aktar", "btn_export": "Excel'e aktar",
+ "hint": "Hücreye çift tıkla → düzenle · Enter = aşağı, Tab = sağa, Esc = vazgeç, boş bırak = puanı sil · "
+         "Renk ne kadar yoğunsa skor o kadar yüksek · Başlığa tıklayarak sırala",
+ "col_title": "Kitap Adı", "col_author": "Yazar", "col_genre": "Tür", "col_pages": "Sayfa",
+ "col_year": "Yıl", "col_score": "Öncelik Skoru",
+ "status_counts": "{total} kitap · {scored} puanlandı · {pending} puan bekliyor",
+ "searching": "Aranıyor…", "enter_query": "Bir kitap adı veya yazar yazın.",
+ "no_results": "Sonuç bulunamadı. Yazımı değiştirmeyi ya da “+ Elle ekle”yi deneyin.",
+ "results_found": "{n} sonuç bulundu. Eklemek için çift tıklayın.",
+ "pick_result": "Önce bir sonuç seçin.",
+ "err_network": "Open Library'ye ulaşılamadı. İnternet bağlantınızı kontrol edin.",
+ "err_search": "Arama hatası: {err}",
+ "dup_book": "“{title}” zaten listenizde.", "ask_title": "Kitap adı:",
+ "confirm_delete": "Seçili {n} kitap listeden silinsin mi?",
+ "bad_pages": "Sayfa sayısı bir sayı olmalı.",
+ "bad_score": "Geçersiz puan: 1 ile {max} arasında bir sayı girin.",
+ "need_openpyxl": "Excel desteği için openpyxl gerekli.\n\nKomut satırında şunu çalıştırın:\n\npip install openpyxl",
+ "pick_excel": "Excel dosyası seç",
+ "confirm_import": "Mevcut listeniz silinip Excel dosyasındaki kitaplar ve ölçütler yüklenecek.\n"
+                   "(Önce “Excel'e aktar” ile yedek almak isteyebilirsiniz.)\n\nDevam edilsin mi?",
+ "import_failed": "Excel okunamadı:\n{err}",
+ "import_done": "{books} kitap ve {crit} ölçüt içe aktarıldı.",
+ "save_excel": "Excel olarak kaydet",
+ "export_locked": "Dosya yazılamadı. Excel'de açıksa kapatıp tekrar deneyin.",
+ "export_failed": "Dışa aktarılamadı:\n{err}", "saved_to": "Kaydedildi: {path}",
+ "save_failed": "Kaydedilemedi:\n{err}",
+ "xl_sheet_main": "Okuma Önceliklendirme", "xl_sheet_settings": "Ayarlar",
+ "xl_weights_head": "Ağırlıklar", "xl_weight": "Ağırlık", "xl_total": "Toplam",
+ "xl_note": "Ağırlıklar birbirine oranlanır; toplamın 1 olması şart değil.",
+ "st_title": "Puanlama ayarları", "st_heading": "Ölçütlerini ve ağırlıklarını kendin belirle.",
+ "st_desc": "Ağırlığı yüksek ölçüt, nihai skoru daha çok etkiler. Ağırlıklar birbirine oranlanır; "
+            "toplamın 1 olması gerekmez. Boş bırakılan puan hesaba katılmaz.",
+ "st_name": "Ölçüt adı", "st_weight": "Ağırlık", "st_add": "+ Ölçüt ekle",
+ "st_scale": "Puan üst sınırı:", "st_total": "Ağırlık toplamı: {total}",
+ "btn_cancel": "İptal", "btn_save": "Kaydet",
+ "st_need_one": "En az bir ölçüt olmalı.", "st_name_required": "Tüm ölçütlerin bir adı olmalı.",
+ "st_bad_weight": "“{name}” için ağırlık 0 veya daha büyük bir sayı olmalı.",
+ "st_dup_name": "İki ölçüt aynı ada sahip olamaz.",
+ "st_bad_scale": "Puan üst sınırı 2 ile 10 arasında olmalı.",
+ "font_title": "Yazı tipi", "font_family": "Yazı tipi", "font_size": "Boyut",
+ "font_preview": "Okuma sırası belli olsun — Aa Bb 123", "font_reset": "Varsayılan", "btn_apply": "Uygula",
+ "about_title": "Hakkında",
+ "about_text": "Next Book {version}\n\nÜcretsiz ve açık kaynaklı kişisel okuma listesi.\n{repo}\n\n"
+               "Verilerin yalnızca bilgisayarında tutulur:\n{path}\n\nTek ağ bağlantısı: arama yaparken openlibrary.org",
+ "crit_1": "İlgi Düzeyi", "crit_2": "Kişisel Katkı", "crit_3": "Okuma Kolaylığı",
+ "crit_4": "Sosyal Bağlam", "crit_5": "Uzun Vadeli / Referans Değeri",
+},
+"en": {
+ "tagline": "Search → add to list → score → know what to read next",
+ "lbl_title": "Book title", "lbl_author": "Author (optional)",
+ "btn_search": "Search", "btn_clear": "Clear", "btn_manual": "+ Add manually",
+ "results_title": " Search results — double-click to add ",
+ "btn_add_to_list": "Add to list", "list_title": " My reading list ",
+ "btn_settings": "⚙ Scoring settings", "btn_sort_score": "Sort by score",
+ "btn_delete": "Delete selected", "btn_import": "Import from Excel", "btn_export": "Export to Excel",
+ "hint": "Double-click a cell to edit · Enter = down, Tab = right, Esc = cancel, empty = clear score · "
+         "The more intense the colour, the higher the score · Click a header to sort",
+ "col_title": "Title", "col_author": "Author", "col_genre": "Genre", "col_pages": "Pages",
+ "col_year": "Year", "col_score": "Priority Score",
+ "status_counts": "{total} books · {scored} scored · {pending} waiting for a score",
+ "searching": "Searching…", "enter_query": "Type a book title or an author.",
+ "no_results": "No results. Try a different spelling or “+ Add manually”.",
+ "results_found": "{n} results found. Double-click to add.",
+ "pick_result": "Select a result first.",
+ "err_network": "Could not reach Open Library. Please check your internet connection.",
+ "err_search": "Search error: {err}",
+ "dup_book": "“{title}” is already in your list.", "ask_title": "Book title:",
+ "confirm_delete": "Delete the {n} selected book(s) from your list?",
+ "bad_pages": "Page count must be a number.",
+ "bad_score": "Invalid score: enter a number between 1 and {max}.",
+ "need_openpyxl": "Excel support needs openpyxl.\n\nRun this in a command prompt:\n\npip install openpyxl",
+ "pick_excel": "Choose an Excel file",
+ "confirm_import": "Your current list will be replaced by the books and criteria from the Excel file.\n"
+                   "(You may want to back up first with “Export to Excel”.)\n\nContinue?",
+ "import_failed": "Could not read the Excel file:\n{err}",
+ "import_done": "Imported {books} books and {crit} criteria.",
+ "save_excel": "Save as Excel",
+ "export_locked": "Could not write the file. If it is open in Excel, close it and try again.",
+ "export_failed": "Could not export:\n{err}", "saved_to": "Saved: {path}",
+ "save_failed": "Could not save:\n{err}",
+ "xl_sheet_main": "Reading Priorities", "xl_sheet_settings": "Settings",
+ "xl_weights_head": "Weights", "xl_weight": "Weight", "xl_total": "Total",
+ "xl_note": "Weights are relative to each other; they do not need to add up to 1.",
+ "st_title": "Scoring settings", "st_heading": "Define your own criteria and weights.",
+ "st_desc": "A criterion with a higher weight affects the final score more. Weights are relative to each "
+            "other and do not need to add up to 1. Empty scores are ignored.",
+ "st_name": "Criterion", "st_weight": "Weight", "st_add": "+ Add criterion",
+ "st_scale": "Maximum score:", "st_total": "Total weight: {total}",
+ "btn_cancel": "Cancel", "btn_save": "Save",
+ "st_need_one": "There must be at least one criterion.", "st_name_required": "Every criterion needs a name.",
+ "st_bad_weight": "The weight for “{name}” must be 0 or greater.",
+ "st_dup_name": "Two criteria cannot have the same name.",
+ "st_bad_scale": "The maximum score must be between 2 and 10.",
+ "font_title": "Font", "font_family": "Font", "font_size": "Size",
+ "font_preview": "Know what to read next — Aa Bb 123", "font_reset": "Default", "btn_apply": "Apply",
+ "about_title": "About",
+ "about_text": "Next Book {version}\n\nA free, open-source personal reading list.\n{repo}\n\n"
+               "Your data stays on your computer:\n{path}\n\nThe only network connection is openlibrary.org when you search.",
+ "crit_1": "Interest", "crit_2": "Personal Value", "crit_3": "Ease of Reading",
+ "crit_4": "Social Context", "crit_5": "Long-term / Reference Value",
+},
+"ru": {
+ "tagline": "Найти → добавить в список → оценить → узнать, что читать дальше",
+ "lbl_title": "Название книги", "lbl_author": "Автор (необязательно)",
+ "btn_search": "Найти", "btn_clear": "Очистить", "btn_manual": "+ Добавить вручную",
+ "results_title": " Результаты поиска — двойной щелчок, чтобы добавить ",
+ "btn_add_to_list": "Добавить в список", "list_title": " Мой список чтения ",
+ "btn_settings": "⚙ Настройки оценки", "btn_sort_score": "Сортировать по оценке",
+ "btn_delete": "Удалить выбранное", "btn_import": "Импорт из Excel", "btn_export": "Экспорт в Excel",
+ "hint": "Двойной щелчок по ячейке — редактировать · Enter — вниз, Tab — вправо, Esc — отмена, пусто — стереть оценку · "
+         "Чем насыщеннее цвет, тем выше оценка · Щёлкните заголовок для сортировки",
+ "col_title": "Название", "col_author": "Автор", "col_genre": "Жанр", "col_pages": "Стр.",
+ "col_year": "Год", "col_score": "Приоритет",
+ "status_counts": "Книг: {total} · оценено: {scored} · ждут оценки: {pending}",
+ "searching": "Поиск…", "enter_query": "Введите название книги или автора.",
+ "no_results": "Ничего не найдено. Измените запрос или нажмите «+ Добавить вручную».",
+ "results_found": "Найдено результатов: {n}. Дважды щёлкните, чтобы добавить.",
+ "pick_result": "Сначала выберите результат.",
+ "err_network": "Не удалось подключиться к Open Library. Проверьте подключение к интернету.",
+ "err_search": "Ошибка поиска: {err}",
+ "dup_book": "«{title}» уже есть в вашем списке.", "ask_title": "Название книги:",
+ "confirm_delete": "Удалить выбранные книги ({n}) из списка?",
+ "bad_pages": "Количество страниц должно быть числом.",
+ "bad_score": "Недопустимая оценка: введите число от 1 до {max}.",
+ "need_openpyxl": "Для работы с Excel нужен openpyxl.\n\nВыполните в командной строке:\n\npip install openpyxl",
+ "pick_excel": "Выберите файл Excel",
+ "confirm_import": "Текущий список будет заменён книгами и критериями из файла Excel.\n"
+                   "(Сначала можно сделать резервную копию через «Экспорт в Excel».)\n\nПродолжить?",
+ "import_failed": "Не удалось прочитать файл Excel:\n{err}",
+ "import_done": "Импортировано книг: {books}, критериев: {crit}.",
+ "save_excel": "Сохранить как Excel",
+ "export_locked": "Не удалось записать файл. Если он открыт в Excel, закройте его и повторите.",
+ "export_failed": "Не удалось экспортировать:\n{err}", "saved_to": "Сохранено: {path}",
+ "save_failed": "Не удалось сохранить:\n{err}",
+ "xl_sheet_main": "Приоритеты чтения", "xl_sheet_settings": "Настройки",
+ "xl_weights_head": "Веса", "xl_weight": "Вес", "xl_total": "Итого",
+ "xl_note": "Веса соотносятся друг с другом; их сумма не обязана равняться 1.",
+ "st_title": "Настройки оценки", "st_heading": "Задайте свои критерии и их веса.",
+ "st_desc": "Критерий с большим весом сильнее влияет на итоговую оценку. Веса соотносятся друг с другом, "
+            "их сумма не обязана равняться 1. Пустые оценки не учитываются.",
+ "st_name": "Критерий", "st_weight": "Вес", "st_add": "+ Добавить критерий",
+ "st_scale": "Максимальная оценка:", "st_total": "Сумма весов: {total}",
+ "btn_cancel": "Отмена", "btn_save": "Сохранить",
+ "st_need_one": "Должен остаться хотя бы один критерий.", "st_name_required": "У каждого критерия должно быть название.",
+ "st_bad_weight": "Вес критерия «{name}» должен быть числом, не меньшим 0.",
+ "st_dup_name": "Два критерия не могут называться одинаково.",
+ "st_bad_scale": "Максимальная оценка должна быть от 2 до 10.",
+ "font_title": "Шрифт", "font_family": "Шрифт", "font_size": "Размер",
+ "font_preview": "Узнайте, что читать дальше — Aa Bb 123", "font_reset": "По умолчанию", "btn_apply": "Применить",
+ "about_title": "О программе",
+ "about_text": "Next Book {version}\n\nБесплатный личный список чтения с открытым исходным кодом.\n{repo}\n\n"
+               "Ваши данные хранятся только на вашем компьютере:\n{path}\n\nЕдинственное сетевое подключение — к openlibrary.org при поиске.",
+ "crit_1": "Интерес", "crit_2": "Личная польза", "crit_3": "Лёгкость чтения",
+ "crit_4": "Социальный контекст", "crit_5": "Долгосрочная ценность / справочник",
+},
+"de": {
+ "tagline": "Suchen → zur Liste hinzufügen → bewerten → wissen, was als Nächstes dran ist",
+ "lbl_title": "Buchtitel", "lbl_author": "Autor (optional)",
+ "btn_search": "Suchen", "btn_clear": "Leeren", "btn_manual": "+ Manuell hinzufügen",
+ "results_title": " Suchergebnisse — Doppelklick zum Hinzufügen ",
+ "btn_add_to_list": "Zur Liste hinzufügen", "list_title": " Meine Leseliste ",
+ "btn_settings": "⚙ Bewertungseinstellungen", "btn_sort_score": "Nach Bewertung sortieren",
+ "btn_delete": "Auswahl löschen", "btn_import": "Aus Excel importieren", "btn_export": "Nach Excel exportieren",
+ "hint": "Doppelklick auf eine Zelle zum Bearbeiten · Enter = nach unten, Tab = nach rechts, Esc = abbrechen, leer = Bewertung löschen · "
+         "Je kräftiger die Farbe, desto höher die Bewertung · Klick auf eine Überschrift sortiert",
+ "col_title": "Titel", "col_author": "Autor", "col_genre": "Genre", "col_pages": "Seiten",
+ "col_year": "Jahr", "col_score": "Prioritätswert",
+ "status_counts": "{total} Bücher · {scored} bewertet · {pending} warten auf Bewertung",
+ "searching": "Suche läuft…", "enter_query": "Bitte einen Buchtitel oder Autor eingeben.",
+ "no_results": "Keine Ergebnisse. Versuche eine andere Schreibweise oder „+ Manuell hinzufügen“.",
+ "results_found": "{n} Ergebnisse gefunden. Doppelklick zum Hinzufügen.",
+ "pick_result": "Bitte zuerst ein Ergebnis auswählen.",
+ "err_network": "Open Library ist nicht erreichbar. Bitte Internetverbindung prüfen.",
+ "err_search": "Suchfehler: {err}",
+ "dup_book": "„{title}“ ist bereits in deiner Liste.", "ask_title": "Buchtitel:",
+ "confirm_delete": "Die {n} ausgewählten Bücher aus der Liste löschen?",
+ "bad_pages": "Die Seitenzahl muss eine Zahl sein.",
+ "bad_score": "Ungültige Bewertung: Gib eine Zahl von 1 bis {max} ein.",
+ "need_openpyxl": "Für Excel wird openpyxl benötigt.\n\nFühre in der Eingabeaufforderung aus:\n\npip install openpyxl",
+ "pick_excel": "Excel-Datei auswählen",
+ "confirm_import": "Deine aktuelle Liste wird durch die Bücher und Kriterien aus der Excel-Datei ersetzt.\n"
+                   "(Sichere sie vorher ggf. mit „Nach Excel exportieren“.)\n\nFortfahren?",
+ "import_failed": "Excel-Datei konnte nicht gelesen werden:\n{err}",
+ "import_done": "{books} Bücher und {crit} Kriterien importiert.",
+ "save_excel": "Als Excel speichern",
+ "export_locked": "Datei konnte nicht geschrieben werden. Falls sie in Excel geöffnet ist, bitte schließen und erneut versuchen.",
+ "export_failed": "Export fehlgeschlagen:\n{err}", "saved_to": "Gespeichert: {path}",
+ "save_failed": "Speichern fehlgeschlagen:\n{err}",
+ "xl_sheet_main": "Leseprioritäten", "xl_sheet_settings": "Einstellungen",
+ "xl_weights_head": "Gewichtungen", "xl_weight": "Gewicht", "xl_total": "Summe",
+ "xl_note": "Die Gewichte stehen im Verhältnis zueinander; die Summe muss nicht 1 ergeben.",
+ "st_title": "Bewertungseinstellungen", "st_heading": "Lege deine eigenen Kriterien und Gewichte fest.",
+ "st_desc": "Ein Kriterium mit höherem Gewicht beeinflusst die Gesamtwertung stärker. Die Gewichte stehen im "
+            "Verhältnis zueinander; die Summe muss nicht 1 ergeben. Leere Bewertungen werden ignoriert.",
+ "st_name": "Kriterium", "st_weight": "Gewicht", "st_add": "+ Kriterium hinzufügen",
+ "st_scale": "Höchstwert:", "st_total": "Gesamtgewicht: {total}",
+ "btn_cancel": "Abbrechen", "btn_save": "Speichern",
+ "st_need_one": "Es muss mindestens ein Kriterium vorhanden sein.", "st_name_required": "Jedes Kriterium braucht einen Namen.",
+ "st_bad_weight": "Das Gewicht für „{name}“ muss 0 oder größer sein.",
+ "st_dup_name": "Zwei Kriterien dürfen nicht denselben Namen haben.",
+ "st_bad_scale": "Der Höchstwert muss zwischen 2 und 10 liegen.",
+ "font_title": "Schriftart", "font_family": "Schriftart", "font_size": "Größe",
+ "font_preview": "Wissen, was als Nächstes dran ist — Aa Bb 123", "font_reset": "Standard", "btn_apply": "Anwenden",
+ "about_title": "Info",
+ "about_text": "Next Book {version}\n\nEine kostenlose Open-Source-Leseliste.\n{repo}\n\n"
+               "Deine Daten bleiben auf deinem Computer:\n{path}\n\nDie einzige Netzwerkverbindung geht bei der Suche zu openlibrary.org.",
+ "crit_1": "Interesse", "crit_2": "Persönlicher Nutzen", "crit_3": "Leichte Lesbarkeit",
+ "crit_4": "Sozialer Kontext", "crit_5": "Langfristiger / Referenzwert",
+},
+"fr": {
+ "tagline": "Rechercher → ajouter à la liste → noter → savoir quoi lire ensuite",
+ "lbl_title": "Titre du livre", "lbl_author": "Auteur (facultatif)",
+ "btn_search": "Rechercher", "btn_clear": "Effacer", "btn_manual": "+ Ajouter manuellement",
+ "results_title": " Résultats — double-clic pour ajouter ",
+ "btn_add_to_list": "Ajouter à la liste", "list_title": " Ma liste de lecture ",
+ "btn_settings": "⚙ Réglages de notation", "btn_sort_score": "Trier par score",
+ "btn_delete": "Supprimer la sélection", "btn_import": "Importer depuis Excel", "btn_export": "Exporter vers Excel",
+ "hint": "Double-clic sur une cellule pour modifier · Entrée = bas, Tab = droite, Échap = annuler, vide = effacer la note · "
+         "Plus la couleur est intense, plus le score est élevé · Cliquez sur un en-tête pour trier",
+ "col_title": "Titre", "col_author": "Auteur", "col_genre": "Genre", "col_pages": "Pages",
+ "col_year": "Année", "col_score": "Score de priorité",
+ "status_counts": "{total} livres · {scored} notés · {pending} en attente de note",
+ "searching": "Recherche…", "enter_query": "Saisissez un titre de livre ou un auteur.",
+ "no_results": "Aucun résultat. Essayez une autre orthographe ou « + Ajouter manuellement ».",
+ "results_found": "{n} résultats. Double-cliquez pour ajouter.",
+ "pick_result": "Sélectionnez d'abord un résultat.",
+ "err_network": "Impossible de joindre Open Library. Vérifiez votre connexion internet.",
+ "err_search": "Erreur de recherche : {err}",
+ "dup_book": "« {title} » est déjà dans votre liste.", "ask_title": "Titre du livre :",
+ "confirm_delete": "Supprimer les {n} livres sélectionnés de la liste ?",
+ "bad_pages": "Le nombre de pages doit être un nombre.",
+ "bad_score": "Note invalide : saisissez un nombre entre 1 et {max}.",
+ "need_openpyxl": "La prise en charge d'Excel nécessite openpyxl.\n\nExécutez dans l'invite de commandes :\n\npip install openpyxl",
+ "pick_excel": "Choisir un fichier Excel",
+ "confirm_import": "Votre liste actuelle sera remplacée par les livres et critères du fichier Excel.\n"
+                   "(Vous pouvez d'abord faire une sauvegarde avec « Exporter vers Excel ».)\n\nContinuer ?",
+ "import_failed": "Impossible de lire le fichier Excel :\n{err}",
+ "import_done": "{books} livres et {crit} critères importés.",
+ "save_excel": "Enregistrer au format Excel",
+ "export_locked": "Impossible d'écrire le fichier. S'il est ouvert dans Excel, fermez-le et réessayez.",
+ "export_failed": "Échec de l'export :\n{err}", "saved_to": "Enregistré : {path}",
+ "save_failed": "Échec de l'enregistrement :\n{err}",
+ "xl_sheet_main": "Priorités de lecture", "xl_sheet_settings": "Réglages",
+ "xl_weights_head": "Pondérations", "xl_weight": "Poids", "xl_total": "Total",
+ "xl_note": "Les poids sont relatifs ; leur somme n'a pas besoin d'être égale à 1.",
+ "st_title": "Réglages de notation", "st_heading": "Définissez vos propres critères et pondérations.",
+ "st_desc": "Un critère à fort poids influence davantage le score final. Les poids sont relatifs et leur somme "
+            "n'a pas besoin d'être égale à 1. Les notes vides sont ignorées.",
+ "st_name": "Critère", "st_weight": "Poids", "st_add": "+ Ajouter un critère",
+ "st_scale": "Note maximale :", "st_total": "Poids total : {total}",
+ "btn_cancel": "Annuler", "btn_save": "Enregistrer",
+ "st_need_one": "Il faut au moins un critère.", "st_name_required": "Chaque critère doit avoir un nom.",
+ "st_bad_weight": "Le poids de « {name} » doit être supérieur ou égal à 0.",
+ "st_dup_name": "Deux critères ne peuvent pas avoir le même nom.",
+ "st_bad_scale": "La note maximale doit être comprise entre 2 et 10.",
+ "font_title": "Police", "font_family": "Police", "font_size": "Taille",
+ "font_preview": "Savoir quoi lire ensuite — Aa Bb 123", "font_reset": "Par défaut", "btn_apply": "Appliquer",
+ "about_title": "À propos",
+ "about_text": "Next Book {version}\n\nUne liste de lecture personnelle, gratuite et open source.\n{repo}\n\n"
+               "Vos données restent sur votre ordinateur :\n{path}\n\nLa seule connexion réseau va vers openlibrary.org lors d'une recherche.",
+ "crit_1": "Intérêt", "crit_2": "Apport personnel", "crit_3": "Facilité de lecture",
+ "crit_4": "Contexte social", "crit_5": "Valeur à long terme / de référence",
+},
+"zh": {
+ "tagline": "搜索 → 加入列表 → 打分 → 知道下一本读什么",
+ "lbl_title": "书名", "lbl_author": "作者（可选）",
+ "btn_search": "搜索", "btn_clear": "清除", "btn_manual": "+ 手动添加",
+ "results_title": " 搜索结果 — 双击添加 ",
+ "btn_add_to_list": "加入列表", "list_title": " 我的阅读列表 ",
+ "btn_settings": "⚙ 评分设置", "btn_sort_score": "按得分排序",
+ "btn_delete": "删除所选", "btn_import": "从 Excel 导入", "btn_export": "导出到 Excel",
+ "hint": "双击单元格进行编辑 · Enter = 向下，Tab = 向右，Esc = 取消，留空 = 清除分数 · "
+         "颜色越深，得分越高 · 点击表头可排序",
+ "col_title": "书名", "col_author": "作者", "col_genre": "类型", "col_pages": "页数",
+ "col_year": "年份", "col_score": "优先级得分",
+ "status_counts": "共 {total} 本 · 已评分 {scored} 本 · 待评分 {pending} 本",
+ "searching": "正在搜索…", "enter_query": "请输入书名或作者。",
+ "no_results": "没有找到结果。请换个写法，或使用“+ 手动添加”。",
+ "results_found": "找到 {n} 条结果，双击即可添加。",
+ "pick_result": "请先选择一条结果。",
+ "err_network": "无法连接 Open Library，请检查网络连接。",
+ "err_search": "搜索出错：{err}",
+ "dup_book": "《{title}》已在你的列表中。", "ask_title": "书名：",
+ "confirm_delete": "要从列表中删除所选的 {n} 本书吗？",
+ "bad_pages": "页数必须是数字。",
+ "bad_score": "分数无效：请输入 1 到 {max} 之间的数字。",
+ "need_openpyxl": "使用 Excel 功能需要 openpyxl。\n\n请在命令行中运行：\n\npip install openpyxl",
+ "pick_excel": "选择 Excel 文件",
+ "confirm_import": "当前列表将被 Excel 文件中的图书和评分标准替换。\n（建议先用“导出到 Excel”备份。）\n\n是否继续？",
+ "import_failed": "无法读取 Excel 文件：\n{err}",
+ "import_done": "已导入 {books} 本书和 {crit} 个评分标准。",
+ "save_excel": "另存为 Excel",
+ "export_locked": "无法写入文件。如果它在 Excel 中打开，请先关闭再重试。",
+ "export_failed": "导出失败：\n{err}", "saved_to": "已保存：{path}",
+ "save_failed": "保存失败：\n{err}",
+ "xl_sheet_main": "阅读优先级", "xl_sheet_settings": "设置",
+ "xl_weights_head": "权重", "xl_weight": "权重", "xl_total": "合计",
+ "xl_note": "权重只看相对大小，总和不必等于 1。",
+ "st_title": "评分设置", "st_heading": "自定义你的评分标准和权重。",
+ "st_desc": "权重越高的标准，对最终得分影响越大。权重只看相对大小，总和不必等于 1。留空的分数不参与计算。",
+ "st_name": "评分标准", "st_weight": "权重", "st_add": "+ 添加标准",
+ "st_scale": "最高分：", "st_total": "权重合计：{total}",
+ "btn_cancel": "取消", "btn_save": "保存",
+ "st_need_one": "至少需要保留一个评分标准。", "st_name_required": "每个评分标准都需要名称。",
+ "st_bad_weight": "“{name}”的权重必须是大于或等于 0 的数字。",
+ "st_dup_name": "两个评分标准不能同名。",
+ "st_bad_scale": "最高分必须在 2 到 10 之间。",
+ "font_title": "字体", "font_family": "字体", "font_size": "字号",
+ "font_preview": "知道下一本读什么 — Aa Bb 123", "font_reset": "默认", "btn_apply": "应用",
+ "about_title": "关于",
+ "about_text": "Next Book {version}\n\n免费、开源的个人阅读清单。\n{repo}\n\n"
+               "你的数据只保存在你的电脑上：\n{path}\n\n唯一的网络连接是搜索时访问 openlibrary.org。",
+ "crit_1": "兴趣程度", "crit_2": "个人收获", "crit_3": "阅读难易",
+ "crit_4": "社交相关", "crit_5": "长期 / 参考价值",
+},
+}
+
+_LANG = ["en"]
+
+
+def set_language(code):
+    if code in I18N:
+        _LANG[0] = code
+
+
+def current_language():
+    return _LANG[0]
+
+
+def T(key, **kw):
+    text = I18N.get(_LANG[0], {}).get(key)
+    if text is None:
+        text = I18N["en"].get(key, key)
+    return text.format(**kw) if kw else text
+
+
+def _aliases(key, extra=()):
+    s = {v[key].lower() for v in I18N.values()}
+    s.update(extra)
+    return s
+
+
+_AL_TITLE = _aliases("col_title", ("kitap adı", "kitap", "başlık", "title", "book title"))
+_AL_AUTHOR = _aliases("col_author", ("yazar", "author"))
+_AL_GENRE = _aliases("col_genre", ("tür", "kategori", "genre", "category"))
+_AL_PAGES = _aliases("col_pages", ("sayfa sayısı", "sayfa", "pages", "page count"))
+_AL_SCORE = _aliases("col_score", ("öncelik skoru", "skor", "priority score", "score"))
+
+
+# ============================================================================
+# TEMALAR
+# ============================================================================
+
+THEMES = {
+    "cream": dict(   # kütüphane katalog çekmecesi (varsayılan)
+        bg="#F5F0E6", text="#2B2B2B", muted="#6B665A", hint="#8A8472", border="#D5CBB2",
+        header_bg="#1F3A5F", header_fg="#FFFFFF", header_active="#2B4F80", title_fg="#1F3A5F",
+        accent="#C8962E", accent_active="#DDAA3C", accent_fg="#1B1B1B",
+        button="#E6DDC8", button_active="#DCD0B3", button_disabled="#EEE8DA",
+        field="#FFFFFF", field_fg="#2B2B2B", tree_bg="#FFFFFF", unscored_fg="#9AA3B2",
+        scored_fg="#143020", select_bg="#E7B94F", select_fg="#000000", label_frame="#6B5A33",
+        ramp=["#EAF2E6", "#D6E7D0", "#C0DAB8", "#A8CC9F", "#8FBC85"]),
+    "moss": dict(
+        bg="#EDF1E8", text="#25301F", muted="#5E6B55", hint="#7F8B76", border="#C9D3BD",
+        header_bg="#35553B", header_fg="#FFFFFF", header_active="#46704E", title_fg="#35553B",
+        accent="#C9A227", accent_active="#DDB63A", accent_fg="#1F1A05",
+        button="#DDE6D2", button_active="#CEDAC0", button_disabled="#E7EDDF",
+        field="#FFFFFF", field_fg="#25301F", tree_bg="#FFFFFF", unscored_fg="#9BA793",
+        scored_fg="#25330F", select_bg="#E7B94F", select_fg="#000000", label_frame="#4B6B3F",
+        ramp=["#EEF3E2", "#E0EBC8", "#CFE0A8", "#BBD28A", "#A4C26B"]),
+    "night": dict(
+        bg="#171C26", text="#E4E7EC", muted="#98A2B3", hint="#7B8598", border="#303A4C",
+        header_bg="#0E131B", header_fg="#E4E7EC", header_active="#1D2736", title_fg="#F2C14E",
+        accent="#E0A93B", accent_active="#F0BC55", accent_fg="#17120A",
+        button="#263043", button_active="#31405A", button_disabled="#1F2736",
+        field="#202838", field_fg="#E4E7EC", tree_bg="#1D2431", unscored_fg="#66728A",
+        scored_fg="#EAF5EA", select_bg="#B9852A", select_fg="#FFFFFF", label_frame="#D6B25E",
+        ramp=["#24362F", "#2A4637", "#315640", "#38674A", "#407955"]),
+    "lavender": dict(
+        bg="#F2EFF8", text="#2A2540", muted="#6E6888", hint="#8C86A5", border="#CFC6E4",
+        header_bg="#4B3F7A", header_fg="#FFFFFF", header_active="#5E50A0", title_fg="#4B3F7A",
+        accent="#8E6FD8", accent_active="#A084E4", accent_fg="#FFFFFF",
+        button="#E4DDF2", button_active="#D8CEEB", button_disabled="#EDE8F6",
+        field="#FFFFFF", field_fg="#2A2540", tree_bg="#FFFFFF", unscored_fg="#A19CB3",
+        scored_fg="#2A1F4F", select_bg="#EDC25A", select_fg="#000000", label_frame="#5B4A8F",
+        ramp=["#F0ECFA", "#E2DAF5", "#D1C5EE", "#BFAEE6", "#AA94DC"]),
+    "sand": dict(
+        bg="#F4ECE3", text="#33261B", muted="#6F5F50", hint="#9A8B7B", border="#D8C7B1",
+        header_bg="#5B3F2C", header_fg="#FFFFFF", header_active="#74523B", title_fg="#5B3F2C",
+        accent="#C0702A", accent_active="#D4843B", accent_fg="#FFFFFF",
+        button="#E8DAC8", button_active="#DDCBB3", button_disabled="#EFE5D8",
+        field="#FFFFFF", field_fg="#33261B", tree_bg="#FFFDF9", unscored_fg="#A89C8E",
+        scored_fg="#3A2414", select_bg="#8DB4D8", select_fg="#000000", label_frame="#6B4A33",
+        ramp=["#F7E9D6", "#F0D9BA", "#E8C79B", "#DFB27B", "#D49C5C"]),
+    "ocean": dict(
+        bg="#E9F1F6", text="#16303F", muted="#587080", hint="#7A93A3", border="#BCD3E0",
+        header_bg="#14506B", header_fg="#FFFFFF", header_active="#1E6A8A", title_fg="#14506B",
+        accent="#E08A2E", accent_active="#EE9C45", accent_fg="#1B1B1B",
+        button="#D7E6EF", button_active="#C7DCE9", button_disabled="#E2EDF3",
+        field="#FFFFFF", field_fg="#16303F", tree_bg="#FFFFFF", unscored_fg="#9AA9B5",
+        scored_fg="#0E2F44", select_bg="#F2C14E", select_fg="#000000", label_frame="#2D6580",
+        ramp=["#E6F1F9", "#D0E5F3", "#B8D8EE", "#9CC8E6", "#7DB4DA"]),
+}
+DEFAULT_THEME = "cream"
 
 
 def resource_path(name):
@@ -65,16 +470,134 @@ def resource_path(name):
     return os.path.join(base, name)
 
 
-def score_bucket(score, smax):
-    """Skoru 0..len(SCORE_RAMP)-1 arası bir renk kademesine çevir."""
+def score_bucket(score, smax, steps=5):
+    """Skoru 0..steps-1 arası bir renk kademesine çevir."""
     if smax <= 1:
-        return len(SCORE_RAMP) - 1
+        return steps - 1
     t = max(0.0, min(1.0, (score - 1) / (smax - 1)))
-    return min(len(SCORE_RAMP) - 1, int(t * len(SCORE_RAMP)))
+    return min(steps - 1, int(t * steps))
 
 
 def short(text, n):
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+# ============================================================================
+# BAYRAKLAR (resim dosyası yok: piksel piksel çizilir, sonra PhotoImage olur)
+# ============================================================================
+
+_RGB_CACHE = {}
+
+
+def _rgb(h):
+    c = _RGB_CACHE.get(h)
+    if c is None:
+        c = (int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16))
+        _RGB_CACHE[h] = c
+    return c
+
+
+def _star_points(cx, cy, R, rot_deg):
+    pts = []
+    for i in range(10):
+        a = math.radians(rot_deg + i * 36)
+        rad = R if i % 2 == 0 else R * 0.382
+        pts.append((cx + rad * math.cos(a), cy - rad * math.sin(a)))
+    return pts
+
+
+def _make_star(cx, cy, R, rot_deg):
+    return (cx, cy, R * R, _star_points(cx, cy, R, rot_deg))
+
+
+def _in_star(x, y, star):
+    cx, cy, r2, pts = star
+    if (x - cx) ** 2 + (y - cy) ** 2 > r2:
+        return False
+    inside = False
+    j = len(pts) - 1
+    for i in range(len(pts)):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+_TR_STAR = _make_star(16.0, 10.0, 2.5, 180)
+_CN_STARS = [_make_star(5, 5, 3, 90)] + [
+    _make_star(cx, cy, 1, math.degrees(math.atan2(cy - 5, 5 - cx)))
+    for cx, cy in ((10, 2), (12, 4), (12, 7), (10, 9))
+]
+
+
+def _flag_color(code, u, v):
+    if code == "de":
+        return "#000000" if v < 1 / 3 else ("#DD0000" if v < 2 / 3 else "#FFCE00")
+    if code == "fr":
+        return "#0055A4" if u < 1 / 3 else ("#FFFFFF" if u < 2 / 3 else "#EF4135")
+    if code == "ru":
+        return "#FFFFFF" if v < 1 / 3 else ("#0039A6" if v < 2 / 3 else "#D52B1E")
+    if code == "tr":
+        x, y = u * 30, v * 20
+        if (x - 9.5) ** 2 + (y - 10) ** 2 <= 25 and (x - 10.75) ** 2 + (y - 10) ** 2 > 16:
+            return "#FFFFFF"
+        if _in_star(x, y, _TR_STAR):
+            return "#FFFFFF"
+        return "#E30A17"
+    if code == "cn" or code == "zh":
+        x, y = u * 30, v * 20
+        for st in _CN_STARS:
+            if _in_star(x, y, st):
+                return "#FFDE00"
+        return "#DE2910"
+    if code == "en" or code == "gb":
+        x, y = u * 60, v * 40
+        n = 72.111
+        d1 = abs(40 * x - 60 * y) / n
+        d2 = abs(40 * x + 60 * y - 2400) / n
+        cx, cy = abs(x - 30), abs(y - 20)
+        if cx <= 2.4 or cy <= 2.4:
+            return "#C8102E"
+        if cx <= 4 or cy <= 4:
+            return "#FFFFFF"
+        if d1 <= 1.2 or d2 <= 1.2:
+            return "#C8102E"
+        if d1 <= 3 or d2 <= 3:
+            return "#FFFFFF"
+        return "#012169"
+    return "#888888"
+
+
+def flag_rows(code, w, h):
+    """Bayrağı w×h piksellik, kenarları yumuşatılmış hex renk satırları olarak üretir."""
+    ss = 3 if w * h <= 1200 else 2
+    n = ss * ss
+    rows = []
+    for py in range(h):
+        row = []
+        for px in range(w):
+            r = g = b = 0
+            for sy in range(ss):
+                for sx in range(ss):
+                    c = _rgb(_flag_color(code, (px + (sx + .5) / ss) / w, (py + (sy + .5) / ss) / h))
+                    r += c[0]
+                    g += c[1]
+                    b += c[2]
+            r, g, b = r // n, g // n, b // n
+            if px in (0, w - 1) or py in (0, h - 1):      # ince koyu çerçeve
+                r, g, b = int(r * .6 + 90 * .4), int(g * .6 + 90 * .4), int(b * .6 + 90 * .4)
+            row.append("#%02x%02x%02x" % (r, g, b))
+        rows.append(row)
+    return rows
+
+
+def make_flag_image(code, w, h):
+    img = tk.PhotoImage(width=w, height=h)
+    rows = flag_rows(code, w, h)
+    img.put(" ".join("{" + " ".join(r) + "}" for r in rows))
+    return img
 
 
 # ============================================================================
@@ -85,10 +608,12 @@ def new_id():
     return uuid.uuid4().hex[:8]
 
 
-def default_data():
+def default_data(lang="tr"):
+    names = I18N.get(lang, I18N["en"])
     return {
         "scale_max": DEFAULT_SCALE_MAX,
-        "criteria": [{"id": new_id(), "name": n, "weight": w} for n, w in DEFAULT_CRITERIA],
+        "criteria": [{"id": new_id(), "name": names[f"crit_{i + 1}"], "weight": w}
+                     for i, w in enumerate(DEFAULT_WEIGHTS)],
         "books": [],
     }
 
@@ -106,7 +631,7 @@ def new_book(title, author="", genre="", pages=None, key=""):
 
 
 def compute_score(book, criteria):
-    """Excel'deki formül: boş bırakılan ölçütler hesaba katılmaz.
+    """Boş bırakılan ölçütler hesaba katılmaz:
     skor = Σ(puan × ağırlık) / Σ(dolu ölçütlerin ağırlığı)"""
     num = den = 0.0
     for c in criteria:
@@ -126,18 +651,18 @@ def fmt_num(v):
     if v is None or v == "":
         return ""
     v = float(v)
-    return str(int(v)) if v == int(v) else f"{v:.1f}".rstrip("0").rstrip(".")
+    return str(int(v)) if v == int(v) else f"{v:.2f}".rstrip("0").rstrip(".")
 
 
 def parse_float(text):
     return float(text.strip().replace(",", "."))
 
 
-def load_data():
+def load_data(lang="tr"):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        base = default_data()
+        base = default_data(lang)
         data.setdefault("scale_max", base["scale_max"])
         data.setdefault("criteria", base["criteria"])
         data.setdefault("books", [])
@@ -146,22 +671,41 @@ def load_data():
             b.setdefault("key", "")
         return data
     except FileNotFoundError:
-        return default_data()
+        return default_data(lang)
     except Exception:
-        # Bozuk dosya: yedekle ve temiz başla
-        try:
+        try:   # bozuk dosya: yedekle ve temiz başla
             DATA_FILE.replace(DATA_FILE.with_suffix(".bozuk.json"))
         except Exception:
             pass
-        return default_data()
+        return default_data(lang)
+
+
+def _atomic_write(path, obj):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+    tmp.replace(path)
 
 
 def save_data(data):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = DATA_FILE.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(DATA_FILE)
+    _atomic_write(DATA_FILE, data)
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_settings(settings):
+    try:
+        _atomic_write(SETTINGS_FILE, settings)
+    except OSError:
+        pass
 
 
 # ============================================================================
@@ -191,7 +735,6 @@ def pick_genre(subjects):
         if not t or len(t) > 30 or any(j in low for j in _JUNK_SUBJECT_PARTS):
             continue
         clean.append(t)
-    # Yaygın bir tür adı "Fantasy fiction" gibi ifadelerin içinde de aranır
     for g in _PREFERRED_GENRES:
         for t in clean:
             if re.search(r"\b" + re.escape(g) + r"\b", t.lower()):
@@ -273,7 +816,7 @@ def clean_results(results, query_title=""):
             return 2
         return 3
 
-    merged.sort(key=lambda r: (rank(r), 0 if r["pages"] else 1))   # sort kararlı: eşitlikte API sırası korunur
+    merged.sort(key=lambda r: (rank(r), 0 if r["pages"] else 1))
     return merged
 
 
@@ -286,10 +829,7 @@ def _require_openpyxl():
         import openpyxl  # noqa: F401
         return True
     except ImportError:
-        messagebox.showerror(
-            APP_NAME,
-            "Excel desteği için openpyxl gerekli.\n\nKomut satırında şunu çalıştırın:\n\npip install openpyxl",
-        )
+        messagebox.showerror(APP_NAME, T("need_openpyxl"))
         return False
 
 
@@ -297,9 +837,9 @@ _SCALE_SUFFIX = re.compile(r"\s*\(\s*\d+\s*-\s*(\d+)\s*\)\s*$")
 
 
 def import_excel(path):
-    """Excel dosyasından yeni bir veri sözlüğü üretir.
-    Beklenen düzen: Kitap Adı | Yazar | Tür | Sayfa Sayısı | ölçüt sütunları… | Öncelik Skoru
-    Ağırlıklar 'Ayarlar' sayfasından (A: ölçüt adı, B: ağırlık) okunur."""
+    """Beklenen düzen: Kitap | Yazar | Tür | Sayfa | ölçüt sütunları… | Skor
+    (başlıklar 6 dilden herhangi birinde olabilir). Ağırlıklar ikinci sayfadan
+    (A: ölçüt adı, B: ağırlık) okunur."""
     from openpyxl import load_workbook
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -308,29 +848,22 @@ def import_excel(path):
     header = [str(c.value or "").strip() for c in ws[1]]
     low = [h.lower() for h in header]
 
-    def find(*aliases):
-        for a in aliases:
-            if a in low:
-                return low.index(a)
-        return None
+    def find(aliases):
+        return next((i for i, h in enumerate(low) if h in aliases), None)
 
-    ti = find("kitap adı", "kitap", "başlık", "title")
-    ai = find("yazar", "author")
-    gi = find("tür", "kategori", "genre")
-    pi = find("sayfa sayısı", "sayfa", "pages")
-    si = next((i for i, h in enumerate(low) if h.startswith("öncelik skoru") or h == "skor"), None)
+    ti, ai, gi, pi = find(_AL_TITLE), find(_AL_AUTHOR), find(_AL_GENRE), find(_AL_PAGES)
+    si = next((i for i, h in enumerate(low) if any(h.startswith(a) for a in _AL_SCORE)), None)
     if ti is None:
-        raise ValueError("'Kitap Adı' sütunu bulunamadı.")
+        raise ValueError("Title column not found / 'Kitap Adı'")
 
     known = {i for i in (ti, ai, gi, pi, si) if i is not None}
     crit_cols = [i for i, h in enumerate(header) if h and i not in known]
     if not crit_cols:
-        raise ValueError("Puanlama ölçütü sütunu bulunamadı.")
+        raise ValueError("No scoring-criteria columns found")
 
-    # Ayarlar sayfasından ağırlıklar
     weights = {}
-    if "Ayarlar" in wb.sheetnames:
-        for row in wb["Ayarlar"].iter_rows(min_row=2, max_col=2, values_only=True):
+    if len(wb.worksheets) > 1:
+        for row in wb.worksheets[1].iter_rows(min_row=2, max_col=2, values_only=True):
             if row[0] and isinstance(row[1], (int, float)):
                 weights[str(row[0]).strip().lower()] = float(row[1])
 
@@ -359,10 +892,7 @@ def import_excel(path):
             pages = int(float(pages)) if pages not in (None, "") else None
         except (TypeError, ValueError):
             pages = None
-        b = new_book(str(title).strip(),
-                     str(cell(ai) or "").strip(),
-                     str(cell(gi) or "").strip(),
-                     pages)
+        b = new_book(str(title).strip(), str(cell(ai) or "").strip(), str(cell(gi) or "").strip(), pages)
         for c in criteria:
             v = cell(c["col"])
             if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -375,8 +905,7 @@ def import_excel(path):
 
 
 def export_excel(data, path):
-    """Orijinal Excel düzenine benzer çıktı: formüller, gri/italik puansız satırlar,
-    renk skalası ve veri çubuğu ile."""
+    """Formüllü, gri/italik puansız satırlı, renk skalalı ve veri çubuklu çıktı."""
     from openpyxl import Workbook
     from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -387,30 +916,32 @@ def export_excel(data, path):
     score_col = 5 + n
     wb = Workbook()
     ws = wb.active
-    ws.title = "Okuma Önceliklendirme"
-    st = wb.create_sheet("Ayarlar")
+    ws.title = T("xl_sheet_main")[:31]
+    sheet2 = T("xl_sheet_settings")[:31]
+    st = wb.create_sheet(sheet2)
+    ref = "'" + sheet2.replace("'", "''") + "'"
 
-    head_fill = PatternFill("solid", fgColor=HEADER_BG.lstrip("#"))
+    head_fill = PatternFill("solid", fgColor=THEMES["cream"]["header_bg"].lstrip("#"))
     head_font = Font(bold=True, color="FFFFFF")
-    headers = ["Kitap Adı", "Yazar", "Tür", "Sayfa Sayısı"] + \
-              [f"{c['name']} (1-{smax})" for c in cs] + ["Öncelik Skoru"]
+    headers = [T("col_title"), T("col_author"), T("col_genre"), T("col_pages")] + \
+              [f"{c['name']} (1-{smax})" for c in cs] + [T("col_score")]
     for i, h in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=i, value=h)
         cell.fill, cell.font = head_fill, head_font
         cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
     ws.row_dimensions[1].height = 45
 
-    st.cell(row=1, column=1, value="Ağırlıklar").fill = head_fill
-    st.cell(row=1, column=2, value="Ağırlık").fill = head_fill
+    st.cell(row=1, column=1, value=T("xl_weights_head")).fill = head_fill
+    st.cell(row=1, column=2, value=T("xl_weight")).fill = head_fill
     st["A1"].font = st["B1"].font = head_font
     for i, c in enumerate(cs):
         st.cell(row=2 + i, column=1, value=c["name"])
         wc = st.cell(row=2 + i, column=2, value=c["weight"])
         wc.fill = PatternFill("solid", fgColor="FFF6DC")
         wc.font = Font(bold=True)
-    st.cell(row=2 + n, column=1, value="Toplam").font = Font(bold=True)
+    st.cell(row=2 + n, column=1, value=T("xl_total")).font = Font(bold=True)
     st.cell(row=2 + n, column=2, value=f"=SUM(B2:B{1 + n})").font = Font(bold=True)
-    st.cell(row=2 + n, column=3, value="Ağırlıklar birbirine oranlanır; toplamın 1 olması şart değil.")
+    st.cell(row=2 + n, column=3, value=T("xl_note"))
     st.column_dimensions["A"].width = 36
     st.column_dimensions["C"].width = 60
 
@@ -423,8 +954,8 @@ def export_excel(data, path):
             v = b["scores"].get(c["id"])
             if v not in (None, ""):
                 ws.cell(row=r, column=5 + i, value=v)
-        num = "+".join(f'IF({L(5+i)}{r}="",0,{L(5+i)}{r}*Ayarlar!$B${2+i})' for i in range(n))
-        den = "+".join(f'IF({L(5+i)}{r}="",0,Ayarlar!$B${2+i})' for i in range(n))
+        num = "+".join(f'IF({L(5+i)}{r}="",0,{L(5+i)}{r}*{ref}!$B${2+i})' for i in range(n))
+        den = "+".join(f'IF({L(5+i)}{r}="",0,{ref}!$B${2+i})' for i in range(n))
         f = ws.cell(row=r, column=score_col, value=f"=IF(({den})=0,0,ROUND(({num})/({den}),2))")
         f.font = Font(bold=True)
 
@@ -454,76 +985,237 @@ def export_excel(data, path):
 
 
 # ============================================================================
-# PUANLAMA AYARLARI PENCERESİ
+# YARDIMCI: pencere ortalama
+# ============================================================================
+
+def center_on_screen(win):
+    try:
+        win.update_idletasks()
+        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+        x = max(0, (win.winfo_screenwidth() - w) // 2)
+        y = max(0, (win.winfo_screenheight() - h) // 3)
+        win.geometry(f"+{x}+{y}")
+    except tk.TclError:
+        pass
+
+
+def center_on_parent(win, parent, w, h):
+    try:
+        parent.update_idletasks()
+        x = parent.winfo_rootx() + max(0, (parent.winfo_width() - w) // 2)
+        y = parent.winfo_rooty() + max(0, (parent.winfo_height() - h) // 3)
+    except tk.TclError:
+        x = y = 100
+    win.geometry(f"{w}x{h}+{x}+{y}")
+
+
+# ============================================================================
+# İLK AÇILIŞ: DİL SEÇİMİ
+# ============================================================================
+
+class LanguageDialog(tk.Toplevel):
+    def __init__(self, app):
+        super().__init__(app.root)
+        t = app.theme
+        self.result = None
+        self.title(APP_NAME)
+        self.configure(bg=t["bg"], padx=26, pady=22)
+        self.resizable(False, False)
+        try:
+            self.iconbitmap(resource_path("next_book.ico"))
+        except Exception:
+            pass
+        fam = app.default_family()
+        tk.Label(self, text="Next Book", font=("Georgia", 24, "bold"),
+                 bg=t["bg"], fg=t["title_fg"]).pack()
+        tk.Label(self, text="Dil seçin · Choose your language · Выберите язык\n"
+                            "Sprache wählen · Choisir la langue · 选择语言",
+                 font=(fam, 10), bg=t["bg"], fg=t["muted"], justify="center").pack(pady=(4, 16))
+        grid = tk.Frame(self, bg=t["bg"])
+        grid.pack()
+        for i, (code, name) in enumerate(LANGS):
+            img = app.flag_image(code, 60, 40)
+            btn = tk.Button(grid, image=img, text=name, compound="top", font=(fam, 11),
+                            bd=0, relief="flat", bg=t["button"], activebackground=t["button_active"],
+                            fg=t["text"], activeforeground=t["text"], padx=16, pady=10,
+                            cursor="hand2", command=lambda c=code: self._pick(c))
+            btn.grid(row=i // 3, column=i % 3, padx=6, pady=6)
+        self.protocol("WM_DELETE_WINDOW", lambda: self._pick("en"))
+        center_on_screen(self)
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.focus_force()
+
+    def _pick(self, code):
+        self.result = code
+        self.destroy()
+
+
+# ============================================================================
+# YAZI TİPİ PENCERESİ
+# ============================================================================
+
+class FontDialog(tk.Toplevel):
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        t = app.theme
+        self.title(T("font_title"))
+        self.configure(bg=t["bg"])
+        self.transient(app.root)
+        self.resizable(False, False)
+        families = sorted({f for f in tkfont.families() if f and not f.startswith("@")}, key=str.casefold)
+        self.fam_var = tk.StringVar(value=app.default_family())
+        self.size_var = tk.StringVar(value=str(app.font_size))
+
+        body = ttk.Frame(self, padding=16)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=T("font_family")).grid(row=0, column=0, sticky="w")
+        self.combo = ttk.Combobox(body, values=families, textvariable=self.fam_var, state="readonly", width=34)
+        self.combo.grid(row=1, column=0, sticky="ew", pady=(2, 10))
+        ttk.Label(body, text=T("font_size")).grid(row=0, column=1, sticky="w", padx=(12, 0))
+        self.spin = ttk.Spinbox(body, from_=8, to=18, width=5, textvariable=self.size_var, command=self._preview)
+        self.spin.grid(row=1, column=1, padx=(12, 0), pady=(2, 10))
+
+        self.preview_font = tkfont.Font(family=app.default_family(), size=app.font_size)
+        self.preview = tk.Label(body, text=T("font_preview"), font=self.preview_font, bg=t["field"],
+                                fg=t["field_fg"], relief="solid", bd=1, padx=12, pady=16, width=44)
+        self.preview.grid(row=2, column=0, columnspan=2, sticky="ew")
+
+        btns = ttk.Frame(body)
+        btns.grid(row=3, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        ttk.Button(btns, text=T("font_reset"), command=self._reset).pack(side="left")
+        ttk.Button(btns, text=T("btn_cancel"), command=self.destroy).pack(side="left", padx=(14, 6))
+        ttk.Button(btns, text=T("btn_apply"), style="Accent.TButton", command=self._apply).pack(side="left")
+
+        self.combo.bind("<<ComboboxSelected>>", lambda _e: self._preview())
+        self.spin.bind("<KeyRelease>", lambda _e: self._preview())
+        center_on_screen(self)
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _size(self):
+        try:
+            return max(8, min(18, int(float(self.size_var.get()))))
+        except ValueError:
+            return self.app.font_size
+
+    def _preview(self):
+        self.preview_font.configure(family=self.fam_var.get(), size=self._size())
+
+    def _reset(self):
+        self.fam_var.set(self.app.language_default_family())
+        self.size_var.set("10")
+        self._preview()
+
+    def _apply(self):
+        fam = self.fam_var.get()
+        default = self.app.language_default_family()
+        self.app.set_font(None if fam == default else fam, self._size())
+        self.destroy()
+
+
+# ============================================================================
+# PUANLAMA AYARLARI PENCERESİ (kaydırılabilir — istediğin kadar ölçüt)
 # ============================================================================
 
 class SettingsDialog(tk.Toplevel):
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
-        self.title("Puanlama ayarları")
-        self.configure(bg=BG)
+        t = app.theme
+        self.title(T("st_title"))
+        self.configure(bg=t["bg"])
         self.transient(app.root)
-        self.resizable(False, False)
-        self.rows = []   # {"id","name","weight","frame"}
+        self.minsize(520, 380)
+        self.rows = []
 
-        pad = {"padx": 10, "pady": 4}
-        ttk.Label(self, text="Ölçütlerini ve ağırlıklarını kendin belirle.",
-                  font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", **pad)
-        ttk.Label(self, foreground="#555", justify="left",
-                  text="Ağırlığı yüksek ölçüt, nihai skoru daha çok etkiler. Ağırlıklar birbirine\n"
-                       "oranlanır; toplamın 1 olması gerekmez. Boş bırakılan puan hesaba katılmaz.",
-                  ).grid(row=1, column=0, sticky="w", **pad)
+        # ---- üst: açıklama
+        head = ttk.Frame(self, padding=(16, 14, 16, 6))
+        head.pack(side="top", fill="x")
+        ttk.Label(head, text=T("st_heading"), font=app.font_head).pack(anchor="w")
+        self.desc = ttk.Label(head, text=T("st_desc"), foreground=t["muted"], justify="left", wraplength=500)
+        self.desc.pack(anchor="w", pady=(4, 0))
 
-        self.body = ttk.Frame(self)
-        self.body.grid(row=2, column=0, sticky="ew", padx=10)
-        ttk.Label(self.body, text="Ölçüt adı").grid(row=0, column=0, sticky="w")
-        ttk.Label(self.body, text="Ağırlık").grid(row=0, column=1, sticky="w", padx=6)
+        # ---- alt: toplam + kaydet/iptal (gövdeden ÖNCE paketlenir ki hep görünsün)
+        foot = ttk.Frame(self, padding=(16, 8, 16, 14))
+        foot.pack(side="bottom", fill="x")
+        self.total_lbl = ttk.Label(foot, foreground=t["muted"])     # satırlardan ÖNCE oluşur
+        self.total_lbl.pack(side="left")
+        ttk.Button(foot, text=T("btn_cancel"), command=self.destroy).pack(side="right", padx=(8, 0))
+        ttk.Button(foot, text=T("btn_save"), style="Accent.TButton", command=self.save).pack(side="right")
+
+        ctl = ttk.Frame(self, padding=(16, 6, 16, 0))
+        ctl.pack(side="bottom", fill="x")
+        ttk.Button(ctl, text=T("st_add"), command=self._add_new).pack(side="left")
+        ttk.Label(ctl, text="    " + T("st_scale")).pack(side="left")
+        self.scale_var = tk.StringVar(value=str(app.data["scale_max"]))
+        ttk.Spinbox(ctl, from_=2, to=10, width=4, textvariable=self.scale_var).pack(side="left", padx=4)
+
+        # ---- orta: kaydırılabilir ölçüt listesi
+        mid = ttk.Frame(self, padding=(16, 4, 10, 0))
+        mid.pack(side="top", fill="both", expand=True)
+        self.canvas = tk.Canvas(mid, bg=t["bg"], highlightthickness=0, bd=0)
+        sb = ttk.Scrollbar(mid, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.inner = ttk.Frame(self.canvas)
+        self.win_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.bind("<MouseWheel>", self._on_wheel)
+
+        self.inner.columnconfigure(0, weight=1)
+        ttk.Label(self.inner, text=T("st_name"), foreground=t["muted"]).grid(row=0, column=0, sticky="w")
+        ttk.Label(self.inner, text=T("st_weight"), foreground=t["muted"]).grid(row=0, column=1, sticky="w", padx=6)
 
         for c in app.data["criteria"]:
             self._add_row(c["id"], c["name"], c["weight"])
 
-        ctl = ttk.Frame(self)
-        ctl.grid(row=3, column=0, sticky="ew", padx=10, pady=(6, 0))
-        ttk.Button(ctl, text="+ Ölçüt ekle", command=lambda: self._add_row(new_id(), "", 1.0)).pack(side="left")
-        ttk.Label(ctl, text="   Puan üst sınırı:").pack(side="left")
-        self.scale_var = tk.StringVar(value=str(app.data["scale_max"]))
-        ttk.Spinbox(ctl, from_=2, to=10, width=4, textvariable=self.scale_var).pack(side="left", padx=4)
-
-        self.total_lbl = ttk.Label(self, foreground="#555")
-        self.total_lbl.grid(row=4, column=0, sticky="w", padx=10, pady=(6, 0))
-
-        btns = ttk.Frame(self)
-        btns.grid(row=5, column=0, sticky="e", padx=10, pady=10)
-        ttk.Button(btns, text="İptal", command=self.destroy).pack(side="right", padx=(6, 0))
-        ttk.Button(btns, text="Kaydet", command=self.save).pack(side="right")
-
-        self._update_total()
-        self.grab_set()
+        center_on_parent(self, app.root, 580, 540)
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
         self.focus_set()
 
-    def _add_row(self, cid, name, weight):
-        r = len(self.rows) + 1
+    # ---- kaydırma
+    def _on_canvas_resize(self, e):
+        self.canvas.itemconfigure(self.win_id, width=e.width)
+        self.desc.configure(wraplength=max(300, e.width - 20))
+
+    def _on_wheel(self, e):
+        self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+
+    # ---- satırlar
+    def _add_new(self):
+        self._add_row(new_id(), "", 1.0, focus=True)
+        self.after(60, lambda: self.canvas.yview_moveto(1.0))
+
+    def _add_row(self, cid, name, weight, focus=False):
         name_var = tk.StringVar(value=name)
-        weight_var = tk.StringVar(value=fmt_num(weight) if weight != "" else "")
+        weight_var = tk.StringVar(value=fmt_num(weight))
         weight_var.trace_add("write", lambda *_: self._update_total())
-        e1 = ttk.Entry(self.body, textvariable=name_var, width=34)
-        e2 = ttk.Entry(self.body, textvariable=weight_var, width=8)
-        row = {"id": cid, "name": name_var, "weight": weight_var, "widgets": [e1, e2]}
-        btn = ttk.Button(self.body, text="✕", width=3, command=lambda: self._remove_row(row))
-        row["widgets"].append(btn)
-        e1.grid(row=r, column=0, pady=2)
-        e2.grid(row=r, column=1, padx=6, pady=2)
-        btn.grid(row=r, column=2)
+        e1 = ttk.Entry(self.inner, textvariable=name_var)
+        e2 = ttk.Entry(self.inner, textvariable=weight_var, width=7)
+        pct = ttk.Label(self.inner, width=5, anchor="e", foreground=self.app.theme["muted"])
+        row = {"id": cid, "name": name_var, "weight": weight_var, "pct": pct}
+        btn = ttk.Button(self.inner, text="✕", width=3, command=lambda: self._remove_row(row))
+        row["widgets"] = [e1, e2, pct, btn]
         self.rows.append(row)
         self._regrid()
         self._update_total()
-        if not name:
+        if focus:
             e1.focus_set()
 
     def _remove_row(self, row):
         if len(self.rows) <= 1:
-            messagebox.showinfo(APP_NAME, "En az bir ölçüt olmalı.", parent=self)
+            messagebox.showinfo(APP_NAME, T("st_need_one"), parent=self)
             return
         for w in row["widgets"]:
             w.destroy()
@@ -533,44 +1225,49 @@ class SettingsDialog(tk.Toplevel):
 
     def _regrid(self):
         for i, row in enumerate(self.rows, start=1):
-            e1, e2, btn = row["widgets"]
-            e1.grid(row=i, column=0, pady=2)
-            e2.grid(row=i, column=1, padx=6, pady=2)
-            btn.grid(row=i, column=2)
+            e1, e2, pct, btn = row["widgets"]
+            e1.grid(row=i, column=0, sticky="ew", pady=3)
+            e2.grid(row=i, column=1, padx=6, pady=3)
+            pct.grid(row=i, column=2, pady=3)
+            btn.grid(row=i, column=3, padx=(4, 0), pady=3)
 
     def _update_total(self):
-        total = 0.0
+        vals = []
         for row in self.rows:
             try:
-                total += parse_float(row["weight"].get())
+                vals.append(max(0.0, parse_float(row["weight"].get())))
             except ValueError:
-                pass
-        self.total_lbl.config(text=f"Ağırlık toplamı: {total:.2f}")
+                vals.append(0.0)
+        total = sum(vals)
+        self.total_lbl.config(text=T("st_total", total=f"{total:.2f}"))
+        for row, v in zip(self.rows, vals):
+            row["pct"].config(text=f"{v / total * 100:.0f}%" if total > 0 else "")
 
+    # ---- kaydet
     def save(self):
         criteria = []
         for row in self.rows:
             name = row["name"].get().strip()
             if not name:
-                messagebox.showwarning(APP_NAME, "Tüm ölçütlerin bir adı olmalı.", parent=self)
+                messagebox.showwarning(APP_NAME, T("st_name_required"), parent=self)
                 return
             try:
                 w = parse_float(row["weight"].get())
                 if w < 0:
                     raise ValueError
             except ValueError:
-                messagebox.showwarning(APP_NAME, f"“{name}” için ağırlık 0 veya daha büyük bir sayı olmalı.", parent=self)
+                messagebox.showwarning(APP_NAME, T("st_bad_weight", name=name), parent=self)
                 return
             criteria.append({"id": row["id"], "name": name, "weight": w})
         if len({c["name"].lower() for c in criteria}) != len(criteria):
-            messagebox.showwarning(APP_NAME, "İki ölçüt aynı ada sahip olamaz.", parent=self)
+            messagebox.showwarning(APP_NAME, T("st_dup_name"), parent=self)
             return
         try:
             smax = int(self.scale_var.get())
             if not 2 <= smax <= 10:
                 raise ValueError
         except ValueError:
-            messagebox.showwarning(APP_NAME, "Puan üst sınırı 2 ile 10 arasında olmalı.", parent=self)
+            messagebox.showwarning(APP_NAME, T("st_bad_scale"), parent=self)
             return
         self.app.apply_settings(criteria, smax)
         self.destroy()
@@ -582,122 +1279,253 @@ class SettingsDialog(tk.Toplevel):
 
 class NextBookApp:
     FIXED = ["title", "author", "genre", "pages"]
-    FIXED_LABELS = {"title": "Kitap Adı", "author": "Yazar", "genre": "Tür", "pages": "Sayfa"}
+    SWATCH = 26
 
     def __init__(self, root):
         self.root = root
-        self.data = load_data()
+        self.settings = load_settings()
+        self.theme_name = self.settings.get("theme") if self.settings.get("theme") in THEMES else DEFAULT_THEME
+        self.theme = THEMES[self.theme_name]
+        self.font_family = self.settings.get("font_family") or None
+        try:
+            self.font_size = max(8, min(18, int(self.settings.get("font_size", 10))))
+        except (TypeError, ValueError):
+            self.font_size = 10
+        set_language(self.settings.get("lang") if self.settings.get("lang") in I18N else "en")
+
+        self.flag_cache = {}
         self.results = []
         self.q = queue.Queue()
         self.edit = None
         self.sort_col = None
         self.sort_rev = False
+        self.lang_popup = None
+        self._hover_cid = None
+        self.title_var = tk.StringVar()
+        self.author_var = tk.StringVar()
 
-        root.title(APP_NAME)
+        root.title(f"{APP_NAME} {APP_VERSION}")
         try:
             root.iconbitmap(resource_path("next_book.ico"))
         except Exception:
             pass   # simge yoksa ya da platform .ico desteklemiyorsa sorun değil
-        root.geometry("1200x740")
+        root.geometry("1220x760")
         root.minsize(900, 560)
+
+        self._make_fonts()
         self._setup_style()
+        if self.settings.get("lang") not in I18N:
+            self._first_run_language()
+        self.data = load_data(current_language())
+
         self._build_ui()
         self.rebuild_columns()
         self.refresh_table()
         self._poll_queue()
+        root.bind("<Button-1>", self._on_root_click, add="+")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    # ---------------------------------------------------------------- stil
-    def _setup_style(self):
+    # ---------------------------------------------------------------- ayarlar
+    def _persist_settings(self):
+        self.settings.update({"lang": current_language(), "theme": self.theme_name,
+                              "font_family": self.font_family, "font_size": self.font_size})
+        save_settings(self.settings)
+
+    def _first_run_language(self):
+        self.root.withdraw()
+        dlg = LanguageDialog(self)
+        self.root.wait_window(dlg)
+        set_language(dlg.result or "en")
+        self._apply_fonts()
+        self._persist_settings()
+        self.root.deiconify()
+
+    def language_default_family(self):
+        return "Microsoft YaHei UI" if current_language() == "zh" else "Segoe UI"
+
+    def default_family(self):
+        return self.font_family or self.language_default_family()
+
+    def flag_image(self, code, w, h):
+        key = (code, w, h)
+        if key not in self.flag_cache:
+            self.flag_cache[key] = make_flag_image(code, w, h)
+        return self.flag_cache[key]
+
+    # ---------------------------------------------------------------- yazı tipleri
+    def _make_fonts(self):
+        fam, size = self.default_family(), self.font_size
+        self.font_normal = tkfont.Font(family=fam, size=size)
+        self.font_italic = tkfont.Font(family=fam, size=size, slant="italic")
+        self.font_head = tkfont.Font(family=fam, size=size, weight="bold")
+
+    def _apply_fonts(self):
+        fam, size = self.default_family(), self.font_size
+        for f in (self.font_normal, self.font_italic, self.font_head):
+            f.configure(family=fam, size=size)
         for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
             try:
-                tkfont.nametofont(name).configure(family="Segoe UI", size=10)
+                tkfont.nametofont(name).configure(family=fam, size=size)
             except tk.TclError:
                 pass
-        self.root.configure(bg=BG)
+        style = ttk.Style()
+        style.configure("Treeview", font=self.font_normal, rowheight=max(24, round(size * 2.8)))
+        style.configure("Treeview.Heading", font=self.font_head)
+        style.configure("TLabelframe.Label", font=self.font_head)
+        style.configure("Accent.TButton", font=self.font_head)
+
+    def set_font(self, family, size):
+        self.font_family = family
+        self.font_size = size
+        self._persist_settings()
+        self._apply_fonts()
+        self.rebuild_ui()
+
+    # ---------------------------------------------------------------- tema / stil
+    def _setup_style(self):
+        t = self.theme
+        self.root.configure(bg=t["bg"])
         style = ttk.Style()
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure(".", background=BG, foreground=TEXT)
-        style.configure("TFrame", background=BG)
-        style.configure("TLabel", background=BG, foreground=TEXT)
-        style.configure("TLabelframe", background=BG, bordercolor=BORDER)
-        style.configure("TLabelframe.Label", background=BG, foreground="#6B5A33",
-                        font=("Segoe UI", 10, "bold"))
-        style.configure("TButton", background="#E6DDC8", foreground=TEXT,
-                        bordercolor=BORDER, padding=(10, 4))
-        style.map("TButton", background=[("active", "#DCD0B3"), ("disabled", "#EEE8DA")])
-        style.configure("TEntry", fieldbackground="#FFFFFF", bordercolor=BORDER, padding=3)
-        style.configure("TSpinbox", fieldbackground="#FFFFFF", bordercolor=BORDER)
-        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF",
-                        foreground=TEXT, rowheight=28, borderwidth=0)
-        style.configure("Treeview.Heading", background=HEADER_BG, foreground="white",
-                        font=("Segoe UI", 10, "bold"), relief="flat", padding=6)
-        style.map("Treeview.Heading", background=[("active", "#2B4F80")])
-        style.map("Treeview", background=[("selected", "#E7B94F")],
-                  foreground=[("selected", "#000000")])
-        style.configure("Accent.TButton", background=ACCENT, foreground="#1b1b1b",
-                        font=("Segoe UI", 10, "bold"), padding=(16, 4))
-        style.map("Accent.TButton", background=[("active", "#DDAA3C"), ("disabled", "#D9D2C0")])
+        style.configure(".", background=t["bg"], foreground=t["text"])
+        style.configure("TFrame", background=t["bg"])
+        style.configure("TLabel", background=t["bg"], foreground=t["text"])
+        style.configure("TLabelframe", background=t["bg"], bordercolor=t["border"])
+        style.configure("TLabelframe.Label", background=t["bg"], foreground=t["label_frame"])
+        style.configure("TButton", background=t["button"], foreground=t["text"],
+                        bordercolor=t["border"], padding=(10, 4))
+        style.map("TButton", background=[("active", t["button_active"]), ("disabled", t["button_disabled"])])
+        style.configure("Tool.TButton", padding=(8, 3))
+        style.configure("Accent.TButton", background=t["accent"], foreground=t["accent_fg"], padding=(16, 4))
+        style.map("Accent.TButton", background=[("active", t["accent_active"]), ("disabled", t["button_disabled"])])
+        style.configure("TEntry", fieldbackground=t["field"], foreground=t["field_fg"],
+                        insertcolor=t["field_fg"], bordercolor=t["border"], padding=3)
+        style.configure("TSpinbox", fieldbackground=t["field"], foreground=t["field_fg"],
+                        arrowcolor=t["text"], bordercolor=t["border"], background=t["button"])
+        style.configure("TCombobox", fieldbackground=t["field"], foreground=t["field_fg"],
+                        arrowcolor=t["text"], bordercolor=t["border"], background=t["button"])
+        style.map("TCombobox", fieldbackground=[("readonly", t["field"])],
+                  foreground=[("readonly", t["field_fg"])],
+                  selectbackground=[("readonly", t["field"])], selectforeground=[("readonly", t["field_fg"])])
+        for orient in ("Vertical", "Horizontal"):
+            style.configure(f"{orient}.TScrollbar", background=t["button"], troughcolor=t["bg"],
+                            bordercolor=t["border"], arrowcolor=t["text"])
+        style.configure("Treeview", background=t["tree_bg"], fieldbackground=t["tree_bg"],
+                        foreground=t["text"], borderwidth=0)
+        style.configure("Treeview.Heading", background=t["header_bg"], foreground=t["header_fg"],
+                        relief="flat", padding=6)
+        style.map("Treeview.Heading", background=[("active", t["header_active"])])
+        style.map("Treeview", background=[("selected", t["select_bg"])],
+                  foreground=[("selected", t["select_fg"])])
+        try:   # Combobox açılır listesi
+            self.root.option_add("*TCombobox*Listbox.background", t["field"])
+            self.root.option_add("*TCombobox*Listbox.foreground", t["field_fg"])
+            self.root.option_add("*TCombobox*Listbox.selectBackground", t["select_bg"])
+            self.root.option_add("*TCombobox*Listbox.selectForeground", t["select_fg"])
+        except tk.TclError:
+            pass
+        self._apply_fonts()
 
-        self.font_normal = tkfont.Font(family="Segoe UI", size=10)
-        self.font_italic = tkfont.Font(family="Segoe UI", size=10, slant="italic")
-        self.font_head = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+    def set_theme(self, name):
+        if name not in THEMES or name == self.theme_name:
+            return
+        self.theme_name = name
+        self.theme = THEMES[name]
+        self._persist_settings()
+        self._setup_style()
+        self.rebuild_ui()
 
-    # ---------------------------------------------------------------- arayüz
+    def set_lang(self, code):
+        if code not in I18N:
+            return
+        set_language(code)
+        self._persist_settings()
+        self._apply_fonts()
+        self.rebuild_ui()
+
+    def rebuild_ui(self):
+        """Tema / dil / yazı tipi değişince arayüzü baştan kur (veri aynı kalır)."""
+        self.finish_edit(False)
+        if self.lang_popup is not None:
+            try:
+                self.lang_popup.destroy()
+            except tk.TclError:
+                pass
+            self.lang_popup = None
+        for w in list(self.root.winfo_children()):
+            w.destroy()
+        self._hover_cid = None
+        self._build_ui()
+        self.rebuild_columns()
+        self.refresh_table()
+        if self.results:
+            self.show_results(self.results)
+
     # ---------------------------------------------------------------- arayüz
     def _build_ui(self):
-        r = self.root
+        r, t = self.root, self.theme
         top = ttk.Frame(r, padding=(14, 10, 14, 4))
         top.pack(fill="x")
         ttk.Label(top, text="Next Book", font=("Georgia", 20, "bold"),
-                  foreground=HEADER_BG).pack(side="left")
-        ttk.Label(top, text="   Ara → listeye ekle → puanla → okuma sırası belli olsun",
-                  foreground="#7A7466").pack(side="left", pady=(10, 0))
+                  foreground=t["title_fg"]).pack(side="left")
 
-        # Arama
+        # sağ üst: tema noktaları · dil bayrağı · yazı tipi · hakkında
+        box = ttk.Frame(top)
+        box.pack(side="right")
+        self._build_swatches(box)
+        self.lang_btn = ttk.Button(box, style="Tool.TButton", text=" ▾", compound="left",
+                                   image=self.flag_image(current_language(), 30, 20),
+                                   command=self.toggle_lang_popup)
+        self.lang_btn.pack(side="left", padx=(12, 0))
+        ttk.Button(box, text="Aa", width=3, style="Tool.TButton",
+                   command=self.open_font_dialog).pack(side="left", padx=(6, 0))
+        ttk.Button(box, text="ⓘ", width=3, style="Tool.TButton",
+                   command=self.show_about).pack(side="left", padx=(6, 0))
+
+        ttk.Label(top, text="   " + T("tagline"), foreground=t["muted"]).pack(side="left", pady=(10, 0))
+
+        # arama
         sf = ttk.Frame(r, padding=(14, 4))
         sf.pack(fill="x")
-        self.title_var = tk.StringVar()
-        self.author_var = tk.StringVar()
-        ttk.Label(sf, text="Kitap adı").grid(row=0, column=0, sticky="w")
-        ttk.Label(sf, text="Yazar (isteğe bağlı)").grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(sf, text=T("lbl_title")).grid(row=0, column=0, sticky="w")
+        ttk.Label(sf, text=T("lbl_author")).grid(row=0, column=1, sticky="w", padx=(8, 0))
         e1 = ttk.Entry(sf, textvariable=self.title_var, width=46)
         e2 = ttk.Entry(sf, textvariable=self.author_var, width=30)
         e1.grid(row=1, column=0, sticky="ew")
         e2.grid(row=1, column=1, sticky="ew", padx=(8, 0))
-        self.search_btn = ttk.Button(sf, text="Ara", style="Accent.TButton", command=self.do_search)
+        self.search_btn = ttk.Button(sf, text=T("btn_search"), style="Accent.TButton", command=self.do_search)
         self.search_btn.grid(row=1, column=2, padx=(8, 0))
-        ttk.Button(sf, text="Temizle", command=self.clear_search).grid(row=1, column=3, padx=(6, 0))
-        ttk.Button(sf, text="+ Elle ekle", command=self.add_manual).grid(row=1, column=4, padx=(14, 0))
+        ttk.Button(sf, text=T("btn_clear"), command=self.clear_search).grid(row=1, column=3, padx=(6, 0))
+        ttk.Button(sf, text=T("btn_manual"), command=self.add_manual).grid(row=1, column=4, padx=(14, 0))
         sf.columnconfigure(0, weight=3)
         sf.columnconfigure(1, weight=2)
         for e in (e1, e2):
             e.bind("<Return>", lambda _e: self.do_search())
         e1.focus_set()
 
-        # Arama sonuçları: sadece sonuç varken görünür (ana liste daha çok yer kaplasın)
-        self.res_frame = ttk.LabelFrame(r, text=" Arama sonuçları — eklemek için çift tıkla ", padding=6)
+        # arama sonuçları: sadece sonuç varken görünür
+        self.res_frame = ttk.LabelFrame(r, text=T("results_title"), padding=6)
         cols = ("title", "author", "genre", "pages", "year")
         self.res_tree = ttk.Treeview(self.res_frame, columns=cols, show="headings", height=6, selectmode="browse")
-        for cid, text, w in (("title", "Kitap Adı", 380), ("author", "Yazar", 230),
-                             ("genre", "Tür", 170), ("pages", "Sayfa", 70), ("year", "İlk yayın", 80)):
-            self.res_tree.heading(cid, text=text)
+        for cid, w in (("title", 380), ("author", 230), ("genre", 170), ("pages", 70), ("year", 80)):
+            self.res_tree.heading(cid, text=T("col_" + cid))
             self.res_tree.column(cid, width=w, stretch=(cid == "title"),
                                  anchor="center" if cid in ("pages", "year") else "w")
         rs = ttk.Scrollbar(self.res_frame, orient="vertical", command=self.res_tree.yview)
         self.res_tree.configure(yscrollcommand=rs.set)
         self.res_tree.pack(side="left", fill="x", expand=True)
         rs.pack(side="left", fill="y")
-        ttk.Button(self.res_frame, text="Listeye ekle", command=self.add_selected_result
+        ttk.Button(self.res_frame, text=T("btn_add_to_list"), command=self.add_selected_result
                    ).pack(side="left", padx=(8, 0), anchor="n")
-        self.res_tree.tag_configure("added", foreground=UNSCORED_FG)
+        self.res_tree.tag_configure("added", foreground=t["unscored_fg"])
         self.res_tree.bind("<Double-1>", lambda _e: self.add_selected_result())
+        self.res_tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.res_tree, e), add="+")
 
-        # Ana liste
-        self.main_frame = mf = ttk.LabelFrame(r, text=" Okuma listem ", padding=6)
+        # ana liste
+        self.main_frame = mf = ttk.LabelFrame(r, text=T("list_title"), padding=6)
         mf.pack(fill="both", expand=True, padx=14, pady=(4, 4))
         self.tree = ttk.Treeview(mf, show="headings", selectmode="extended")
         vs = ttk.Scrollbar(mf, orient="vertical", command=self.tree.yview)
@@ -708,40 +1536,162 @@ class NextBookApp:
         hs.grid(row=1, column=0, sticky="ew")
         mf.rowconfigure(0, weight=1)
         mf.columnconfigure(0, weight=1)
-        self.tree.tag_configure("unscored", foreground=UNSCORED_FG, background="#FFFFFF", font=self.font_italic)
-        for i, col in enumerate(SCORE_RAMP):
-            self.tree.tag_configure(f"s{i}", background=col, foreground=SCORED_FG, font=self.font_normal)
+        self.tree.tag_configure("unscored", foreground=t["unscored_fg"], background=t["tree_bg"], font=self.font_italic)
+        for i, col in enumerate(t["ramp"]):
+            self.tree.tag_configure(f"s{i}", background=col, foreground=t["scored_fg"], font=self.font_normal)
         self.tree.bind("<Double-1>", self.on_double_click)
         self.tree.bind("<Delete>", lambda _e: self.delete_selected())
         self.tree.bind("<MouseWheel>", lambda _e: self.finish_edit(True))
+        self.tree.bind("<Shift-MouseWheel>", self._on_shift_wheel)
+        self.tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.tree, e), add="+")
+        self.tree.bind("<Motion>", self._on_tree_motion)
 
-        # Alt çubuk
+        # alt çubuk
         bf = ttk.Frame(r, padding=(14, 4, 14, 4))
         bf.pack(fill="x")
-        ttk.Button(bf, text="⚙ Puanlama ayarları", command=self.open_settings).pack(side="left")
-        ttk.Button(bf, text="Puana göre sırala", command=self.sort_by_score).pack(side="left", padx=6)
-        ttk.Button(bf, text="Seçileni sil", command=self.delete_selected).pack(side="left")
-        ttk.Button(bf, text="Excel'den içe aktar", command=self.import_from_excel).pack(side="left", padx=(18, 0))
-        ttk.Button(bf, text="Excel'e aktar", command=self.export_to_excel).pack(side="left", padx=6)
-        self.status = ttk.Label(bf, text="", foreground="#6B665A")
+        ttk.Button(bf, text=T("btn_settings"), command=self.open_settings).pack(side="left")
+        ttk.Button(bf, text=T("btn_sort_score"), command=self.sort_by_score).pack(side="left", padx=6)
+        ttk.Button(bf, text=T("btn_delete"), command=self.delete_selected).pack(side="left")
+        ttk.Button(bf, text=T("btn_import"), command=self.import_from_excel).pack(side="left", padx=(18, 0))
+        ttk.Button(bf, text=T("btn_export"), command=self.export_to_excel).pack(side="left", padx=6)
+        self.status = ttk.Label(bf, text="", foreground=t["muted"])
         self.status.pack(side="right")
-        ttk.Label(r, foreground="#8A8472", padding=(14, 0, 14, 8),
-                  text="Hücreye çift tıkla → düzenle · Enter = aşağı, Tab = sağa, Esc = vazgeç, boş bırak = puanı sil · "
-                       "Satır ne kadar koyu yeşilse skoru o kadar yüksek · Başlığa tıklayarak sırala"
-                  ).pack(fill="x")
+        hint = ttk.Label(r, foreground=t["hint"], padding=(14, 0, 14, 8), text=T("hint"), justify="left")
+        hint.pack(fill="x")
+        hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(200, e.width - 28)))
 
-    # ---------------------------------------------------------------- sütunlar
+    # ---------------------------------------------------------------- tema noktaları
+    def _build_swatches(self, parent):
+        t, sw = self.theme, self.SWATCH
+        names = list(THEMES)
+        c = tk.Canvas(parent, width=len(names) * (sw + 8) + 6, height=sw + 12, bg=t["bg"],
+                      highlightthickness=0, bd=0, cursor="hand2")
+        for i, name in enumerate(names):
+            th = THEMES[name]
+            x0, y0 = 8 + i * (sw + 8), 6
+            if name == self.theme_name:
+                c.create_oval(x0 - 4, y0 - 4, x0 + sw + 4, y0 + sw + 4, outline=t["accent"], width=2)
+            c.create_arc(x0, y0, x0 + sw, y0 + sw, start=90, extent=180, fill=th["bg"], outline=th["border"])
+            c.create_arc(x0, y0, x0 + sw, y0 + sw, start=270, extent=180, fill=th["header_bg"], outline=th["border"])
+        c.bind("<Button-1>", self._on_swatch_click)
+        c.pack(side="left")
+        self.swatch_canvas = c
+
+    def _on_swatch_click(self, e):
+        idx = int((e.x - 4) // (self.SWATCH + 8))
+        names = list(THEMES)
+        if 0 <= idx < len(names):
+            self.set_theme(names[idx])
+
+    # ---------------------------------------------------------------- dil açılır penceresi
+    def toggle_lang_popup(self):
+        if self.lang_popup is not None:
+            try:
+                self.lang_popup.destroy()
+            except tk.TclError:
+                pass
+            self.lang_popup = None
+            return
+        self.open_lang_popup()
+
+    def open_lang_popup(self):
+        t = self.theme
+        pop = tk.Toplevel(self.root)
+        pop.overrideredirect(True)
+        pop.configure(bg=t["border"])
+        inner = tk.Frame(pop, bg=t["bg"], padx=8, pady=8)
+        inner.pack(padx=1, pady=1)
+        fam = self.default_family()
+        for i, (code, name) in enumerate(LANGS):
+            sel = code == current_language()
+            btn = tk.Button(inner, image=self.flag_image(code, 44, 30), text=name, compound="top",
+                            font=(fam, 9), bd=0, relief="flat", bg=t["bg"], fg=t["text"],
+                            activebackground=t["button_active"], activeforeground=t["text"],
+                            highlightthickness=2, highlightbackground=t["accent"] if sel else t["bg"],
+                            highlightcolor=t["accent"], padx=8, pady=4, cursor="hand2",
+                            command=lambda c=code: self._choose_lang(c))
+            btn.grid(row=i // 2, column=i % 2, padx=3, pady=3)
+        try:
+            self.root.update_idletasks()
+            x = self.lang_btn.winfo_rootx()
+            y = self.lang_btn.winfo_rooty() + self.lang_btn.winfo_height() + 4
+            pop.update_idletasks()
+            x = max(0, min(x, self.root.winfo_screenwidth() - pop.winfo_reqwidth() - 8))
+            pop.geometry(f"+{x}+{y}")
+        except tk.TclError:
+            pass
+        pop.bind("<Escape>", lambda _e: self.toggle_lang_popup())
+        pop.bind("<FocusOut>", lambda _e: self._popup_focus_out(pop))
+        self.lang_popup = pop
+        pop.focus_force()
+
+    def _popup_focus_out(self, pop):
+        def check():
+            if self.lang_popup is not pop:
+                return
+            try:
+                f = self.root.focus_get()
+            except Exception:
+                f = None
+            if f is None or not str(f).startswith(str(pop)):
+                try:
+                    pop.destroy()
+                except tk.TclError:
+                    pass
+                self.lang_popup = None
+        self.root.after(80, check)
+
+    def _choose_lang(self, code):
+        if self.lang_popup is not None:
+            try:
+                self.lang_popup.destroy()
+            except tk.TclError:
+                pass
+            self.lang_popup = None
+        self.set_lang(code)
+
+    def open_font_dialog(self):
+        self.finish_edit(True)
+        FontDialog(self)
+
+    def show_about(self):
+        messagebox.showinfo(T("about_title"),
+                            T("about_text", version=APP_VERSION, repo=REPO_URL, path=str(DATA_DIR)))
+
+    # ---------------------------------------------------------------- seçimi temizleme
+    def _clear_if_blank(self, tree, event):
+        """Tablonun boş bir yerine tıklanınca hiçbir satır seçili kalmasın."""
+        region = tree.identify_region(event.x, event.y)
+        if region in ("heading", "separator"):
+            return
+        if not tree.identify_row(event.y):
+            tree.selection_remove(tree.selection())
+
+    def _on_root_click(self, event):
+        try:
+            cls = event.widget.winfo_class()
+        except Exception:
+            return
+        if cls in ("TFrame", "TLabel", "TLabelframe", "Frame", "Label", "Tk"):
+            for tr in (getattr(self, "tree", None), getattr(self, "res_tree", None)):
+                if tr is not None:
+                    try:
+                        tr.selection_remove(tr.selection())
+                    except tk.TclError:
+                        pass
+
     # ---------------------------------------------------------------- sütunlar
     def col_ids(self):
         return self.FIXED + ["c_" + c["id"] for c in self.data["criteria"]] + ["score"]
 
+    def criterion_by_col(self, cid):
+        return next((c for c in self.data["criteria"] if "c_" + c["id"] == cid), None)
+
     def heading_text(self, cid):
-        if cid in self.FIXED_LABELS:
-            return self.FIXED_LABELS[cid]
-        if cid == "score":
-            return "Öncelik Skoru"
-        c = next(c for c in self.data["criteria"] if "c_" + c["id"] == cid)
-        return short(c["name"], 22)
+        if cid in self.FIXED or cid == "score":
+            return T("col_" + cid)
+        c = self.criterion_by_col(cid)
+        return short(c["name"], 22) if c else cid
 
     def rebuild_columns(self):
         ids = self.col_ids()
@@ -758,10 +1708,12 @@ class NextBookApp:
             elif cid == "pages":
                 self.tree.column(cid, width=70, minwidth=50, stretch=False, anchor="center")
             elif cid == "score":
-                self.tree.column(cid, width=130, minwidth=90, stretch=False, anchor="center")
-            else:   # ölçüt sütunu: başlığa göre dar tut, puanlar zaten 1-2 karakter
+                w = self.font_head.measure(self.heading_text(cid)) + 46
+                self.tree.column(cid, width=max(110, w), minwidth=90, stretch=False, anchor="center")
+            else:   # ölçüt sütunu: başlığa göre dar; ne kadar çok olursa yatay kaydırma devreye girer
                 w = self.font_head.measure(self.heading_text(cid)) + 46
                 self.tree.column(cid, width=max(84, min(200, w)), minwidth=60, stretch=False, anchor="center")
+        self.tree.xview_moveto(0)
 
     def autosize_columns(self):
         """Kitap adı / yazar / tür sütunlarını içeriğe göre ayarla (kesilmesin)."""
@@ -783,7 +1735,29 @@ class NextBookApp:
                 text += " ▼" if self.sort_rev else " ▲"
             self.tree.heading(cid, text=text, command=lambda c=cid: self.sort_by(c))
 
-    # ---------------------------------------------------------------- tablo
+    def _on_tree_motion(self, event):
+        """Kısaltılmış ölçüt başlığının üzerine gelince tam adı durum çubuğunda göster."""
+        cid = None
+        if self.tree.identify_region(event.x, event.y) == "heading":
+            try:
+                idx = int(self.tree.identify_column(event.x)[1:]) - 1
+                ids = self.col_ids()
+                cid = ids[idx] if 0 <= idx < len(ids) else None
+            except ValueError:
+                cid = None
+        if cid == self._hover_cid:
+            return
+        self._hover_cid = cid
+        c = self.criterion_by_col(cid) if cid else None
+        if c:
+            self.set_status(c["name"])
+        else:
+            self.update_status()
+
+    def _on_shift_wheel(self, event):
+        self.finish_edit(True)
+        self.tree.xview_scroll(-3 if event.delta > 0 else 3, "units")
+
     # ---------------------------------------------------------------- tablo
     def row_values(self, b):
         cs = self.data["criteria"]
@@ -796,7 +1770,7 @@ class NextBookApp:
         cs = self.data["criteria"]
         if not is_scored(b, cs):
             return ("unscored",)
-        return (f"s{score_bucket(compute_score(b, cs), self.data['scale_max'])}",)
+        return (f"s{score_bucket(compute_score(b, cs), self.data['scale_max'], len(self.theme['ramp']))}",)
 
     def refresh_table(self):
         self.finish_edit(False)
@@ -814,7 +1788,7 @@ class NextBookApp:
         cs = self.data["criteria"]
         total = len(self.data["books"])
         scored = sum(1 for b in self.data["books"] if is_scored(b, cs))
-        self.set_status(f"{total} kitap · {scored} puanlandı · {total - scored} puan bekliyor")
+        self.set_status(T("status_counts", total=total, scored=scored, pending=total - scored))
 
     def set_status(self, text):
         self.status.config(text=text)
@@ -826,7 +1800,7 @@ class NextBookApp:
         try:
             save_data(self.data)
         except OSError as e:
-            messagebox.showerror(APP_NAME, f"Kaydedilemedi:\n{e}")
+            messagebox.showerror(APP_NAME, T("save_failed", err=e))
 
     # ---------------------------------------------------------------- sıralama
     def sort_by(self, cid):
@@ -869,9 +1843,9 @@ class NextBookApp:
     def do_search(self):
         t, a = self.title_var.get().strip(), self.author_var.get().strip()
         if not t and not a:
-            self.set_status("Bir kitap adı veya yazar yazın.")
+            self.set_status(T("enter_query"))
             return
-        self.set_status("Aranıyor…")
+        self.set_status(T("searching"))
         self.search_btn.config(state="disabled")
         threading.Thread(target=self._search_worker, args=(t, a), daemon=True).start()
 
@@ -885,15 +1859,17 @@ class NextBookApp:
         try:
             while True:
                 kind, payload = self.q.get_nowait()
-                self.search_btn.config(state="normal")
+                try:
+                    self.search_btn.config(state="normal")
+                except tk.TclError:
+                    pass
                 if kind == "ok":
                     self.show_results(payload)
                 else:
                     if isinstance(payload, (urllib.error.URLError, TimeoutError, OSError)):
-                        msg = "Open Library'ye ulaşılamadı. İnternet bağlantınızı kontrol edin."
+                        self.set_status(T("err_network"))
                     else:
-                        msg = f"Arama hatası: {payload}"
-                    self.set_status(msg)
+                        self.set_status(T("err_search", err=payload))
         except queue.Empty:
             pass
         self.root.after(100, self._poll_queue)
@@ -903,7 +1879,7 @@ class NextBookApp:
         self.res_tree.delete(*self.res_tree.get_children())
         if not results:
             self.res_frame.pack_forget()
-            self.set_status("Sonuç bulunamadı. Yazımı değiştirmeyi ya da “+ Elle ekle”yi deneyin.")
+            self.set_status(T("no_results"))
             return
         for i, r in enumerate(results):
             added = self.find_duplicate(r) is not None
@@ -911,7 +1887,7 @@ class NextBookApp:
                                  values=(("✓ " if added else "") + r["title"], r["author"], r["genre"],
                                          r["pages"] or "", r["year"]))
         self.res_frame.pack(fill="x", padx=14, pady=(8, 4), before=self.main_frame)
-        self.set_status(f"{len(results)} sonuç bulundu. Eklemek için çift tıklayın.")
+        self.set_status(T("results_found", n=len(results)))
 
     def clear_search(self):
         self.title_var.set("")
@@ -921,7 +1897,6 @@ class NextBookApp:
         self.res_frame.pack_forget()
         self.update_status()
 
-    # ---------------------------------------------------------------- ekleme / silme
     # ---------------------------------------------------------------- ekleme / silme
     def find_duplicate(self, r):
         tkey = (r["title"].casefold(), (r["author"] or "").casefold())
@@ -935,20 +1910,20 @@ class NextBookApp:
     def add_selected_result(self):
         sel = self.res_tree.selection()
         if not sel:
-            self.set_status("Önce bir sonuç seçin.")
+            self.set_status(T("pick_result"))
             return
         r = self.results[int(sel[0])]
         dup = self.find_duplicate(r)
         if dup:
             self.tree.selection_set(dup["id"])
             self.tree.see(dup["id"])
-            messagebox.showinfo(APP_NAME, f"“{dup['title']}” zaten listenizde.")
+            messagebox.showinfo(APP_NAME, T("dup_book", title=dup["title"]))
             return
         self._append_book(new_book(r["title"], r["author"], r["genre"], r["pages"], r["key"]))
         self.res_tree.item(sel[0], tags=("added",))
 
     def add_manual(self):
-        title = simpledialog.askstring(APP_NAME, "Kitap adı:", parent=self.root)
+        title = simpledialog.askstring(APP_NAME, T("ask_title"), parent=self.root)
         if title and title.strip():
             self._append_book(new_book(title.strip()))
 
@@ -965,7 +1940,7 @@ class NextBookApp:
         sel = self.tree.selection()
         if not sel:
             return
-        if not messagebox.askyesno(APP_NAME, f"Seçili {len(sel)} kitap listeden silinsin mi?"):
+        if not messagebox.askyesno(APP_NAME, T("confirm_delete", n=len(sel))):
             return
         self.finish_edit(False)
         ids = set(sel)
@@ -983,6 +1958,23 @@ class NextBookApp:
         if iid:
             self.start_edit(iid, idx)
 
+    def _ensure_col_visible(self, idx):
+        """Çok ölçüt varsa düzenlenecek sütun yatay olarak görünür alana kaydırılsın."""
+        ids = self.col_ids()
+        widths = [int(self.tree.column(c, "width")) for c in ids]
+        total = sum(widths)
+        if total <= 0:
+            return
+        left = sum(widths[:idx])
+        right = left + widths[idx]
+        first, last = self.tree.xview()
+        vis_left, vis_right = first * total, last * total
+        if left < vis_left:
+            self.tree.xview_moveto(left / total)
+        elif right > vis_right:
+            self.tree.xview_moveto(max(0.0, (right - (vis_right - vis_left)) / total))
+        self.tree.update_idletasks()
+
     def start_edit(self, iid, idx):
         self.finish_edit(True)
         ids = self.col_ids()
@@ -990,6 +1982,7 @@ class NextBookApp:
             return
         cid = ids[idx]
         self.tree.see(iid)
+        self._ensure_col_visible(idx)
         self.tree.update_idletasks()
         bbox = self.tree.bbox(iid, f"#{idx + 1}")
         if not bbox:
@@ -1000,7 +1993,9 @@ class NextBookApp:
             cur = fmt_num(b["scores"].get(cid[2:]))
         else:
             cur = "" if b[cid] in (None, "") else str(b[cid])
-        entry = tk.Entry(self.tree, font=("Segoe UI", 10), relief="solid", bd=1,
+        t = self.theme
+        entry = tk.Entry(self.tree, font=self.font_normal, relief="solid", bd=1,
+                         bg=t["field"], fg=t["field_fg"], insertbackground=t["field_fg"],
                          justify="center" if cid.startswith("c_") or cid == "pages" else "left")
         entry.insert(0, cur)
         entry.select_range(0, "end")
@@ -1062,7 +2057,7 @@ class NextBookApp:
                     b["pages"] = int(float(text.replace(",", ".")))
                 except ValueError:
                     self.root.bell()
-                    self.set_status("Sayfa sayısı bir sayı olmalı.")
+                    self.set_status(T("bad_pages"))
                     return
         else:   # puan
             key = cid[2:]
@@ -1076,13 +2071,13 @@ class NextBookApp:
                         raise ValueError
                 except ValueError:
                     self.root.bell()
-                    self.set_status(f"Geçersiz puan: 1 ile {smax} arasında bir sayı girin.")
+                    self.set_status(T("bad_score", max=smax))
                     return
                 b["scores"][key] = int(v) if v == int(v) else round(v, 1)
         self.save()
         self.update_row(b)
 
-    # ---------------------------------------------------------------- ayarlar
+    # ---------------------------------------------------------------- puanlama ayarları
     def open_settings(self):
         self.finish_edit(True)
         SettingsDialog(self)
@@ -1103,47 +2098,46 @@ class NextBookApp:
     def import_from_excel(self):
         if not _require_openpyxl():
             return
-        path = filedialog.askopenfilename(title="Excel dosyası seç",
-                                          filetypes=[("Excel", "*.xlsx *.xlsm"), ("Tümü", "*.*")])
+        path = filedialog.askopenfilename(title=T("pick_excel"),
+                                          filetypes=[("Excel", "*.xlsx *.xlsm"), ("*", "*.*")])
         if not path:
             return
-        if self.data["books"] and not messagebox.askyesno(
-                APP_NAME, "Mevcut listeniz silinip Excel dosyasındaki kitaplar ve ölçütler yüklenecek.\n"
-                          "(Önce “Excel'e aktar” ile yedek almak isteyebilirsiniz.)\n\nDevam edilsin mi?"):
+        if self.data["books"] and not messagebox.askyesno(APP_NAME, T("confirm_import")):
             return
         try:
             new = import_excel(path)
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"Excel okunamadı:\n{e}")
+            messagebox.showerror(APP_NAME, T("import_failed", err=e))
             return
         self.data = new
         self.sort_col = None
         self.save()
         self.rebuild_columns()
         self.refresh_table()
-        messagebox.showinfo(APP_NAME, f"{len(new['books'])} kitap ve {len(new['criteria'])} ölçüt içe aktarıldı.")
+        messagebox.showinfo(APP_NAME, T("import_done", books=len(new["books"]), crit=len(new["criteria"])))
 
     def export_to_excel(self):
         if not _require_openpyxl():
             return
-        path = filedialog.asksaveasfilename(title="Excel olarak kaydet", defaultextension=".xlsx",
+        path = filedialog.asksaveasfilename(title=T("save_excel"), defaultextension=".xlsx",
                                             initialfile="Next_Book.xlsx", filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
         try:
             export_excel(self.data, path)
         except PermissionError:
-            messagebox.showerror(APP_NAME, "Dosya yazılamadı. Excel'de açıksa kapatıp tekrar deneyin.")
+            messagebox.showerror(APP_NAME, T("export_locked"))
             return
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"Dışa aktarılamadı:\n{e}")
+            messagebox.showerror(APP_NAME, T("export_failed", err=e))
             return
-        self.set_status(f"Kaydedildi: {path}")
+        self.set_status(T("saved_to", path=path))
 
     # ---------------------------------------------------------------- kapanış
     def on_close(self):
         self.finish_edit(True)
         self.save()
+        self._persist_settings()
         self.root.destroy()
 
 
