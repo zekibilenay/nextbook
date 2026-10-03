@@ -25,13 +25,13 @@ Uygulama henüz dijital olarak imzalanmadığı için Windows SmartScreen "Bilin
 The app is not code-signed yet, so Windows may show an "unknown publisher" warning (**More info → Run anyway**). You do not have to trust it blindly:
 
 1. **Kaynak kod açık / Open source:** `next_book.py` tek dosyadır, okuyabilirsin. / a single readable file.
-2. **Exe'yi bu depo derler / Built by GitHub Actions:** `.github/workflows/build.yml`. Doğrulamak için / to verify: `gh attestation verify NextBook-windows.zip --repo zekiyildirimboun/nextbook`
+2. **Exe'yi bu depo derler / Built by GitHub Actions:** `.github/workflows/build.yml`. Doğrulamak için / to verify: `gh attestation verify NextBook-windows.zip --repo zekibilenay/nextbook`
 3. **Sağlama toplamı / Checksum:** PowerShell: `Get-FileHash NextBook-windows.zip` çıktısı release'teki `.sha256` ile aynı olmalı / must match the `.sha256` file.
 4. **Hiç exe istemiyorsan / No exe at all:** Python 3.9+ ile `python next_book.py`
 
 ## Gizlilik / Privacy
 - Verilerin yalnızca bilgisayarında, `%APPDATA%\NextBook` klasöründe tutulur. / Your data stays on your computer.
-- Ağ bağlantıları: (1) arama yaptığında `openlibrary.org`'a giden kitap adı / yazar sorgusu, (2) açılışta duyuru dosyasını okumak için tek bir HTTPS GET isteği (kimlik, kitap verisi veya çerez gönderilmez; sunucu yalnızca `User-Agent: NextBook/<sürüm>` görür). / Network: (1) your search query to `openlibrary.org`, (2) one HTTPS GET at startup for the announcement file (no identifiers, no book data; the server only sees `User-Agent: NextBook/<version>`).
+- Ağ bağlantıları: (1) arama yaptığında `openlibrary.org`'a giden kitap adı / yazar sorgusu, (2) açılışta ve uygulama açık kaldıkça 6 saatte bir, duyuru dosyasını okumak için tek bir HTTPS GET isteği (kimlik, kitap verisi veya çerez gönderilmez; sunucu yalnızca `User-Agent: NextBook/<sürüm>` görür). / Network: (1) your search query to `openlibrary.org`, (2) one HTTPS GET at startup, and again every 6 hours while the app stays open, for the announcement file (no identifiers, no book data; the server only sees `User-Agent: NextBook/<version>`).
 - Duyuruları kapatmak için `%APPDATA%\NextBook\settings.json` içine `"announcements": false` yaz. / To disable announcements set `"announcements": false` in `settings.json`.
 
 ## Kaynaktan çalıştırma / Run from source
@@ -51,7 +51,7 @@ Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL
 
 ## Sürüm yayınlama / Releasing
 ```
-git tag v1.3.0
+git tag v1.3.1
 git push --tags
 ```
 GitHub Actions exe'yi derler ve Releases'e yükler. / GitHub Actions builds the exe and attaches it to the release.

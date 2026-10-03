@@ -35,9 +35,9 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
-REPO_URL = "https://github.com/zekiyildirimboun/nextbook"
+REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
 DATA_FILE = DATA_DIR / "next_book.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"     # dil / tema / yazı tipi (veriden ayrı)
@@ -45,7 +45,7 @@ SETTINGS_FILE = DATA_DIR / "settings.json"     # dil / tema / yazı tipi (veride
 # Duyuru kaynağı: tüm uygulamaların ortak kullandığı tek bir JSON dosyası (bkz. announcements.example.json).
 # Sadece HTTPS kabul edilir. Boş bırakırsan duyuru özelliği tamamen kapanır.
 ANNOUNCE_URL = os.environ.get("NEXTBOOK_ANNOUNCE_URL",
-                              "https://zekiyildirimboun.github.io/announcements/feed.json")
+                              "https://zekibilenay.github.io/announcements/feed.json")
 ANNOUNCE_REFRESH_MS = 6 * 60 * 60 * 1000       # açık kaldığı sürece 6 saatte bir yeniden sor
 ANNOUNCE_ROTATE_MS = 10_000                     # birden çok duyuru varsa değişme süresi
 
@@ -116,6 +116,7 @@ I18N = {
  "crit_4": "Sosyal Bağlam", "crit_5": "Uzun Vadeli / Referans Değeri",
  "ann_new_version": "Yeni sürüm yayınlandı: {latest} (sizdeki: {current})", "ann_open_q": "Bağlantı tarayıcıda açılsın mı?\n{url}",
  "ann_dismiss": "Bu duyuruyu kapat",
+        "data_recovered": "Veri dosyan okunamadı (bozulmuş olabilir). Yeni bir liste ile başlandı; eski dosya şuraya yedeklendi:\n{path}",
 },
 "en": {
  "tagline": "Search → add to list → score → know what to read next",
@@ -172,6 +173,7 @@ I18N = {
  "crit_4": "Social Context", "crit_5": "Long-term / Reference Value",
  "ann_new_version": "A new version is out: {latest} (you have {current})", "ann_open_q": "Open this link in your browser?\n{url}",
  "ann_dismiss": "Dismiss this announcement",
+        "data_recovered": "Your data file could not be read (it may be corrupted). A new list was started; the old file was backed up to:\n{path}",
 },
 "ru": {
  "tagline": "Найти → добавить в список → оценить → узнать, что читать дальше",
@@ -228,6 +230,7 @@ I18N = {
  "crit_4": "Социальный контекст", "crit_5": "Долгосрочная ценность / справочник",
  "ann_new_version": "Вышла новая версия: {latest} (у вас {current})", "ann_open_q": "Открыть ссылку в браузере?\n{url}",
  "ann_dismiss": "Закрыть это объявление",
+        "data_recovered": "Не удалось прочитать файл данных (возможно, он повреждён). Начат новый список; старый файл сохранён здесь:\n{path}",
 },
 "de": {
  "tagline": "Suchen → zur Liste hinzufügen → bewerten → wissen, was als Nächstes dran ist",
@@ -284,6 +287,7 @@ I18N = {
  "crit_4": "Sozialer Kontext", "crit_5": "Langfristiger / Referenzwert",
  "ann_new_version": "Neue Version verfügbar: {latest} (installiert: {current})", "ann_open_q": "Link im Browser öffnen?\n{url}",
  "ann_dismiss": "Diese Ankündigung schließen",
+        "data_recovered": "Deine Datendatei konnte nicht gelesen werden (möglicherweise beschädigt). Es wurde eine neue Liste angelegt; die alte Datei wurde hier gesichert:\n{path}",
 },
 "fr": {
  "tagline": "Rechercher → ajouter à la liste → noter → savoir quoi lire ensuite",
@@ -340,6 +344,7 @@ I18N = {
  "crit_4": "Contexte social", "crit_5": "Valeur à long terme / de référence",
  "ann_new_version": "Nouvelle version disponible : {latest} (vous avez {current})", "ann_open_q": "Ouvrir ce lien dans le navigateur ?\n{url}",
  "ann_dismiss": "Fermer cette annonce",
+        "data_recovered": "Votre fichier de données est illisible (peut-être corrompu). Une nouvelle liste a été créée ; l'ancien fichier a été sauvegardé ici :\n{path}",
 },
 "zh": {
  "tagline": "搜索 → 加入列表 → 打分 → 知道下一本读什么",
@@ -394,6 +399,7 @@ I18N = {
  "crit_4": "社交相关", "crit_5": "长期 / 参考价值",
  "ann_new_version": "新版本已发布：{latest}（当前：{current}）", "ann_open_q": "在浏览器中打开此链接？\n{url}",
  "ann_dismiss": "关闭此公告",
+        "data_recovered": "无法读取你的数据文件（可能已损坏）。已创建新的列表，旧文件已备份到：\n{path}",
 },
 }
 
@@ -739,12 +745,21 @@ def _loc(value, lang):
     return ""
 
 
+class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """https adresinden http adresine yönlendirmeyi reddet ("yalnızca HTTPS" sözü delinmesin)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith("https://"):
+            raise urllib.error.URLError("redirect to a non-https url was blocked")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def fetch_feed(url):
     if not url.lower().startswith("https://"):
         raise ValueError("announcement url must be https")
     req = urllib.request.Request(url, headers={"User-Agent": f"NextBook/{APP_VERSION}",
                                                "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=6) as r:
+    with urllib.request.build_opener(_HttpsOnlyRedirect).open(req, timeout=6) as r:
         raw = r.read(65537)
     if len(raw) > 65536:
         raise ValueError("announcement feed too large")
@@ -864,26 +879,59 @@ def parse_float(text):
     return float(text.strip().replace(",", "."))
 
 
+LOAD_NOTICE = []   # veri dosyası okunamayıp yedeklendiyse yedeğin yolu buraya yazılır
+
+
+def _validate_data(data, base):
+    """Dosyadaki yapı beklenenden farklıysa ValueError fırlat (arayüz sonradan KeyError ile çökmesin)."""
+    if not isinstance(data, dict):
+        raise ValueError("root is not an object")
+    data.setdefault("scale_max", base["scale_max"])
+    data.setdefault("criteria", base["criteria"])
+    data.setdefault("books", [])
+    if not isinstance(data["criteria"], list) or not isinstance(data["books"], list):
+        raise ValueError("criteria/books must be lists")
+    smax = int(data["scale_max"])
+    data["scale_max"] = smax if 2 <= smax <= 10 else base["scale_max"]
+    if not data["criteria"]:
+        data["criteria"] = base["criteria"]
+    for c in data["criteria"]:
+        if not isinstance(c, dict) or not isinstance(c.get("id"), str) or not isinstance(c.get("name"), str):
+            raise ValueError("bad criterion")
+        w = float(c.get("weight", 1.0))
+        if not math.isfinite(w) or w < 0:
+            raise ValueError("bad weight")
+        c["weight"] = w
+    for b in data["books"]:
+        if not isinstance(b, dict) or not isinstance(b.get("id"), str) or not isinstance(b.get("title"), str):
+            raise ValueError("bad book")
+        b.setdefault("author", "")
+        b.setdefault("genre", "")
+        b.setdefault("pages", None)
+        b.setdefault("key", "")
+        if not isinstance(b.get("scores"), dict):
+            b["scores"] = {}
+    return data
+
+
 def load_data(lang="tr"):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        base = default_data(lang)
-        data.setdefault("scale_max", base["scale_max"])
-        data.setdefault("criteria", base["criteria"])
-        data.setdefault("books", [])
+        data = _validate_data(data, default_data(lang))
         tag_builtin_criteria(data["criteria"])
-        for b in data["books"]:
-            b.setdefault("scores", {})
-            b.setdefault("key", "")
         return data
     except FileNotFoundError:
         return default_data(lang)
     except Exception:
-        try:   # bozuk dosya: yedekle ve temiz başla
-            DATA_FILE.replace(DATA_FILE.with_suffix(".bozuk.json"))
+        # Bozuk dosya: silme, zaman damgalı bir yedeğe taşı (eski yedeğin üstüne yazma) ve kullanıcıya haber ver.
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = DATA_FILE.with_name(f"next_book.bozuk-{stamp}.json")
+        try:
+            DATA_FILE.replace(backup)
         except Exception:
-            pass
+            backup = DATA_FILE
+        LOAD_NOTICE.append(str(backup))
         return default_data(lang)
 
 
@@ -937,7 +985,7 @@ def pick_genre(subjects):
     """Open Library konu listesi gürültülü; makul bir tür seç."""
     clean = []
     for s in subjects or []:
-        t = (s or "").strip()
+        t = str(s or "").strip()
         low = t.lower()
         if not t or len(t) > 30 or any(j in low for j in _JUNK_SUBJECT_PARTS):
             continue
@@ -971,13 +1019,16 @@ def search_books(title, author, limit=40):
 def parse_search_docs(docs):
     results = []
     for d in docs:
-        pages = d.get("number_of_pages_median")
+        try:
+            pages = int(d.get("number_of_pages_median") or 0) or None
+        except (TypeError, ValueError, OverflowError):
+            pages = None
         results.append({
-            "key": d.get("key", ""),
-            "title": d.get("title", "").strip(),
-            "author": ", ".join((d.get("author_name") or [])[:3]),
+            "key": str(d.get("key") or ""),
+            "title": str(d.get("title") or "").strip(),
+            "author": ", ".join(str(a) for a in (d.get("author_name") or [])[:3]),
             "genre": pick_genre(d.get("subject")),
-            "pages": int(pages) if pages else None,
+            "pages": pages,
             "year": d.get("first_publish_year") or "",
         })
     return [r for r in results if r["title"]]
@@ -1071,7 +1122,8 @@ def import_excel(path):
     weights = {}
     if len(wb.worksheets) > 1:
         for row in wb.worksheets[1].iter_rows(min_row=2, max_col=2, values_only=True):
-            if row[0] and isinstance(row[1], (int, float)):
+            if (row[0] and isinstance(row[1], (int, float)) and not isinstance(row[1], bool)
+                    and math.isfinite(row[1]) and row[1] >= 0):
                 weights[str(row[0]).strip().lower()] = float(row[1])
 
     scale_max = DEFAULT_SCALE_MAX
@@ -1097,18 +1149,27 @@ def import_excel(path):
         pages = cell(pi)
         try:
             pages = int(float(pages)) if pages not in (None, "") else None
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             pages = None
         b = new_book(str(title).strip(), str(cell(ai) or "").strip(), str(cell(gi) or "").strip(), pages)
         for c in criteria:
             v = cell(c["col"])
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+                v = min(v, scale_max)   # arayüzdeki ayar penceresiyle aynı kural: üst sınırı aşan puan kırpılır
                 b["scores"][c["id"]] = float(v) if v != int(v) else int(v)
         books.append(b)
 
     for c in criteria:
         c.pop("col")
     return {"scale_max": scale_max, "criteria": tag_builtin_criteria(criteria), "books": books}
+
+
+def _xl_text(cell, value):
+    """Metin hücresi yaz; '=' ile başlayan değer (ör. kitap adı) formül olarak yorumlanmasın."""
+    cell.value = value
+    if isinstance(value, str) and value.startswith("="):
+        cell.data_type = "s"
+    return cell
 
 
 def export_excel(data, path):
@@ -1133,7 +1194,7 @@ def export_excel(data, path):
     headers = [T("col_title"), T("col_author"), T("col_genre"), T("col_pages")] + \
               [f"{c['name']} (1-{smax})" for c in cs] + [T("col_score")]
     for i, h in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=i, value=h)
+        cell = _xl_text(ws.cell(row=1, column=i), h)
         cell.fill, cell.font = head_fill, head_font
         cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
     ws.row_dimensions[1].height = 45
@@ -1142,7 +1203,7 @@ def export_excel(data, path):
     st.cell(row=1, column=2, value=T("xl_weight")).fill = head_fill
     st["A1"].font = st["B1"].font = head_font
     for i, c in enumerate(cs):
-        st.cell(row=2 + i, column=1, value=c["name"])
+        _xl_text(st.cell(row=2 + i, column=1), c["name"])
         wc = st.cell(row=2 + i, column=2, value=c["weight"])
         wc.fill = PatternFill("solid", fgColor="FFF6DC")
         wc.font = Font(bold=True)
@@ -1153,9 +1214,9 @@ def export_excel(data, path):
     st.column_dimensions["C"].width = 60
 
     for r, b in enumerate(books, start=2):
-        ws.cell(row=r, column=1, value=b["title"]).font = Font(bold=True)
-        ws.cell(row=r, column=2, value=b["author"])
-        ws.cell(row=r, column=3, value=b["genre"])
+        _xl_text(ws.cell(row=r, column=1), b["title"]).font = Font(bold=True)
+        _xl_text(ws.cell(row=r, column=2), b["author"])
+        _xl_text(ws.cell(row=r, column=3), b["genre"])
         ws.cell(row=r, column=4, value=b["pages"])
         for i, c in enumerate(cs):
             v = b["scores"].get(c["id"])
@@ -1442,7 +1503,8 @@ class SettingsDialog(tk.Toplevel):
         vals = []
         for row in self.rows:
             try:
-                vals.append(max(0.0, parse_float(row["weight"].get())))
+                v = parse_float(row["weight"].get())
+                vals.append(max(0.0, v) if math.isfinite(v) else 0.0)
             except ValueError:
                 vals.append(0.0)
         total = sum(vals)
@@ -1460,7 +1522,7 @@ class SettingsDialog(tk.Toplevel):
                 return
             try:
                 w = parse_float(row["weight"].get())
-                if w < 0:
+                if not math.isfinite(w) or w < 0:
                     raise ValueError
             except ValueError:
                 messagebox.showwarning(APP_NAME, T("st_bad_weight", name=name), parent=self)
@@ -1539,6 +1601,9 @@ class NextBookApp:
         self.refresh_table()
         self._poll_queue()
         self._announce_tick()
+        if LOAD_NOTICE:
+            path = LOAD_NOTICE[0]
+            root.after(400, lambda: messagebox.showwarning(APP_NAME, T("data_recovered", path=path)))
         root.bind("<Button-1>", self._on_root_click, add="+")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -2389,8 +2454,11 @@ class NextBookApp:
                 b["pages"] = None
             else:
                 try:
-                    b["pages"] = int(float(text.replace(",", ".")))
-                except ValueError:
+                    n = int(float(text.replace(",", ".")))
+                    if n < 0:
+                        raise ValueError
+                    b["pages"] = n
+                except (ValueError, OverflowError):
                     self.root.bell()
                     self.set_status(T("bad_pages"))
                     return
