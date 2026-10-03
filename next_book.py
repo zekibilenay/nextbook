@@ -19,6 +19,7 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
 import urllib.error
 import urllib.parse
@@ -31,6 +32,8 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
+APP_VERSION = "1.0.1"
+REPO_URL = "https://github.com/zekiyildirimboun/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
 DATA_FILE = DATA_DIR / "next_book.json"
 
@@ -44,11 +47,34 @@ DEFAULT_CRITERIA = [
 ]
 DEFAULT_SCALE_MAX = 5
 
-# Satır renkleri
-UNSCORED_FG = "#9AA3B2"   # puansız: soluk gri, italik
-SCORED_FG = "#10233F"     # puanlı: koyu lacivert
-SCORED_BG = "#DCE6F5"     # puanlı: hafif mavi zemin
-HEADER_BG = "#1F3A5F"
+# Renk teması: "kütüphane katalog çekmecesi" — krem zemin, lacivert başlık, hardal vurgu
+BG = "#F5F0E6"            # pencere zemini (krem)
+TEXT = "#2B2B2B"
+BORDER = "#D5CBB2"
+HEADER_BG = "#1F3A5F"     # lacivert
+ACCENT = "#C8962E"        # hardal
+UNSCORED_FG = "#9AA3B2"   # puansız satır: soluk gri, italik
+SCORED_FG = "#143020"     # puanlı satır: koyu yeşil-siyah yazı
+# Skor yükseldikçe satır yosun yeşiline doğru koyulaşır (düşük → yüksek)
+SCORE_RAMP = ["#EAF2E6", "#D6E7D0", "#C0DAB8", "#A8CC9F", "#8FBC85"]
+
+
+def resource_path(name):
+    """PyInstaller paketinde de, düz çalıştırmada da dosyayı bul."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+
+def score_bucket(score, smax):
+    """Skoru 0..len(SCORE_RAMP)-1 arası bir renk kademesine çevir."""
+    if smax <= 1:
+        return len(SCORE_RAMP) - 1
+    t = max(0.0, min(1.0, (score - 1) / (smax - 1)))
+    return min(len(SCORE_RAMP) - 1, int(t * len(SCORE_RAMP)))
+
+
+def short(text, n):
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
 # ============================================================================
@@ -165,14 +191,18 @@ def pick_genre(subjects):
         if not t or len(t) > 30 or any(j in low for j in _JUNK_SUBJECT_PARTS):
             continue
         clean.append(t)
-    lows = {t.lower(): t for t in clean}
+    # Yaygın bir tür adı "Fantasy fiction" gibi ifadelerin içinde de aranır
     for g in _PREFERRED_GENRES:
-        if g in lows:
-            return lows[g]
-    return clean[0] if clean else ""
+        for t in clean:
+            if re.search(r"\b" + re.escape(g) + r"\b", t.lower()):
+                return g.title()
+    if clean:
+        first = re.split(r"[,;]", clean[0])[0].strip()
+        return first[:1].upper() + first[1:]
+    return ""
 
 
-def search_books(title, author, limit=25):
+def search_books(title, author, limit=40):
     params = {
         "limit": limit,
         "fields": "key,title,author_name,subject,number_of_pages_median,first_publish_year",
@@ -182,10 +212,10 @@ def search_books(title, author, limit=25):
     if author:
         params["author"] = author
     url = "https://openlibrary.org/search.json?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "NextBook/1.0 (personal reading list)"})
+    req = urllib.request.Request(url, headers={"User-Agent": f"NextBook/{APP_VERSION} (+{REPO_URL})"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         payload = json.load(resp)
-    return parse_search_docs(payload.get("docs", []))
+    return clean_results(parse_search_docs(payload.get("docs", [])), title)[:25]
 
 
 def parse_search_docs(docs):
@@ -201,6 +231,50 @@ def parse_search_docs(docs):
             "year": d.get("first_publish_year") or "",
         })
     return [r for r in results if r["title"]]
+
+
+_NOISE_TITLE = re.compile(r"\[(?:collection|set|box|omnibus)|box(?:ed)? set|collection/set", re.I)
+
+
+def _norm(text):
+    return re.sub(r"[^\w]+", " ", (text or "").casefold()).strip()
+
+
+def clean_results(results, query_title=""):
+    """Takım/koleksiyon kayıtlarını ele, aynı kitabın tekrarlarını birleştir,
+    aranan başlığa en yakın olanları öne al."""
+    kept = [r for r in results if not _NOISE_TITLE.search(r["title"])]
+    if not kept:
+        kept = list(results)
+
+    def info(r):
+        return bool(r["pages"]) + bool(r["genre"]) + bool(r["year"]) + bool(r["author"])
+
+    best, order = {}, []
+    for r in kept:
+        first_author = _norm((r["author"] or "").split(",")[0]).split()
+        key = (_norm(r["title"]), first_author[-1] if first_author else "")
+        if key not in best:
+            best[key] = r
+            order.append(key)
+        elif info(r) > info(best[key]):
+            best[key] = r
+    merged = [best[k] for k in order]
+
+    q = _norm(query_title)
+
+    def rank(r):
+        t = _norm(r["title"])
+        if q and t == q:
+            return 0
+        if q and t.startswith(q):
+            return 1
+        if q and q in t:
+            return 2
+        return 3
+
+    merged.sort(key=lambda r: (rank(r), 0 if r["pages"] else 1))   # sort kararlı: eşitlikte API sırası korunur
+    return merged
 
 
 # ============================================================================
@@ -388,6 +462,7 @@ class SettingsDialog(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         self.title("Puanlama ayarları")
+        self.configure(bg=BG)
         self.transient(app.root)
         self.resizable(False, False)
         self.rows = []   # {"id","name","weight","frame"}
@@ -519,6 +594,10 @@ class NextBookApp:
         self.sort_rev = False
 
         root.title(APP_NAME)
+        try:
+            root.iconbitmap(resource_path("next_book.ico"))
+        except Exception:
+            pass   # simge yoksa ya da platform .ico desteklemiyorsa sorun değil
         root.geometry("1200x740")
         root.minsize(900, 560)
         self._setup_style()
@@ -535,32 +614,48 @@ class NextBookApp:
                 tkfont.nametofont(name).configure(family="Segoe UI", size=10)
             except tk.TclError:
                 pass
+        self.root.configure(bg=BG)
         style = ttk.Style()
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("Treeview", rowheight=28, borderwidth=0)
+        style.configure(".", background=BG, foreground=TEXT)
+        style.configure("TFrame", background=BG)
+        style.configure("TLabel", background=BG, foreground=TEXT)
+        style.configure("TLabelframe", background=BG, bordercolor=BORDER)
+        style.configure("TLabelframe.Label", background=BG, foreground="#6B5A33",
+                        font=("Segoe UI", 10, "bold"))
+        style.configure("TButton", background="#E6DDC8", foreground=TEXT,
+                        bordercolor=BORDER, padding=(10, 4))
+        style.map("TButton", background=[("active", "#DCD0B3"), ("disabled", "#EEE8DA")])
+        style.configure("TEntry", fieldbackground="#FFFFFF", bordercolor=BORDER, padding=3)
+        style.configure("TSpinbox", fieldbackground="#FFFFFF", bordercolor=BORDER)
+        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF",
+                        foreground=TEXT, rowheight=28, borderwidth=0)
         style.configure("Treeview.Heading", background=HEADER_BG, foreground="white",
                         font=("Segoe UI", 10, "bold"), relief="flat", padding=6)
         style.map("Treeview.Heading", background=[("active", "#2B4F80")])
-        style.map("Treeview", background=[("selected", "#F0C060")],
+        style.map("Treeview", background=[("selected", "#E7B94F")],
                   foreground=[("selected", "#000000")])
-        style.configure("Accent.TButton", background="#C8962E", foreground="#1b1b1b",
-                        font=("Segoe UI", 10, "bold"), padding=(14, 4))
-        style.map("Accent.TButton", background=[("active", "#DDAA3C"), ("disabled", "#d9d2c0")])
+        style.configure("Accent.TButton", background=ACCENT, foreground="#1b1b1b",
+                        font=("Segoe UI", 10, "bold"), padding=(16, 4))
+        style.map("Accent.TButton", background=[("active", "#DDAA3C"), ("disabled", "#D9D2C0")])
 
         self.font_normal = tkfont.Font(family="Segoe UI", size=10)
         self.font_italic = tkfont.Font(family="Segoe UI", size=10, slant="italic")
+        self.font_head = tkfont.Font(family="Segoe UI", size=10, weight="bold")
 
+    # ---------------------------------------------------------------- arayüz
     # ---------------------------------------------------------------- arayüz
     def _build_ui(self):
         r = self.root
         top = ttk.Frame(r, padding=(14, 10, 14, 4))
         top.pack(fill="x")
-        ttk.Label(top, text="Next Book", font=("Segoe UI", 18, "bold")).pack(side="left")
+        ttk.Label(top, text="Next Book", font=("Georgia", 20, "bold"),
+                  foreground=HEADER_BG).pack(side="left")
         ttk.Label(top, text="   Ara → listeye ekle → puanla → okuma sırası belli olsun",
-                  foreground="#666").pack(side="left", pady=(8, 0))
+                  foreground="#7A7466").pack(side="left", pady=(10, 0))
 
         # Arama
         sf = ttk.Frame(r, padding=(14, 4))
@@ -583,26 +678,26 @@ class NextBookApp:
             e.bind("<Return>", lambda _e: self.do_search())
         e1.focus_set()
 
-        # Sonuçlar
-        rf = ttk.LabelFrame(r, text=" Arama sonuçları — eklemek için çift tıkla ", padding=6)
-        rf.pack(fill="x", padx=14, pady=(8, 4))
+        # Arama sonuçları: sadece sonuç varken görünür (ana liste daha çok yer kaplasın)
+        self.res_frame = ttk.LabelFrame(r, text=" Arama sonuçları — eklemek için çift tıkla ", padding=6)
         cols = ("title", "author", "genre", "pages", "year")
-        self.res_tree = ttk.Treeview(rf, columns=cols, show="headings", height=5, selectmode="browse")
-        for cid, text, w in (("title", "Kitap Adı", 380), ("author", "Yazar", 240),
-                             ("genre", "Tür", 150), ("pages", "Sayfa", 70), ("year", "İlk yayın", 80)):
+        self.res_tree = ttk.Treeview(self.res_frame, columns=cols, show="headings", height=6, selectmode="browse")
+        for cid, text, w in (("title", "Kitap Adı", 380), ("author", "Yazar", 230),
+                             ("genre", "Tür", 170), ("pages", "Sayfa", 70), ("year", "İlk yayın", 80)):
             self.res_tree.heading(cid, text=text)
             self.res_tree.column(cid, width=w, stretch=(cid == "title"),
                                  anchor="center" if cid in ("pages", "year") else "w")
-        rs = ttk.Scrollbar(rf, orient="vertical", command=self.res_tree.yview)
+        rs = ttk.Scrollbar(self.res_frame, orient="vertical", command=self.res_tree.yview)
         self.res_tree.configure(yscrollcommand=rs.set)
         self.res_tree.pack(side="left", fill="x", expand=True)
         rs.pack(side="left", fill="y")
-        ttk.Button(rf, text="Listeye ekle", command=self.add_selected_result).pack(side="left", padx=(8, 0), anchor="n")
+        ttk.Button(self.res_frame, text="Listeye ekle", command=self.add_selected_result
+                   ).pack(side="left", padx=(8, 0), anchor="n")
         self.res_tree.tag_configure("added", foreground=UNSCORED_FG)
         self.res_tree.bind("<Double-1>", lambda _e: self.add_selected_result())
 
         # Ana liste
-        mf = ttk.LabelFrame(r, text=" Okuma listem ", padding=6)
+        self.main_frame = mf = ttk.LabelFrame(r, text=" Okuma listem ", padding=6)
         mf.pack(fill="both", expand=True, padx=14, pady=(4, 4))
         self.tree = ttk.Treeview(mf, show="headings", selectmode="extended")
         vs = ttk.Scrollbar(mf, orient="vertical", command=self.tree.yview)
@@ -613,61 +708,82 @@ class NextBookApp:
         hs.grid(row=1, column=0, sticky="ew")
         mf.rowconfigure(0, weight=1)
         mf.columnconfigure(0, weight=1)
-        self.tree.tag_configure("unscored", foreground=UNSCORED_FG, font=self.font_italic)
-        self.tree.tag_configure("scored", foreground=SCORED_FG, background=SCORED_BG, font=self.font_normal)
+        self.tree.tag_configure("unscored", foreground=UNSCORED_FG, background="#FFFFFF", font=self.font_italic)
+        for i, col in enumerate(SCORE_RAMP):
+            self.tree.tag_configure(f"s{i}", background=col, foreground=SCORED_FG, font=self.font_normal)
         self.tree.bind("<Double-1>", self.on_double_click)
         self.tree.bind("<Delete>", lambda _e: self.delete_selected())
         self.tree.bind("<MouseWheel>", lambda _e: self.finish_edit(True))
 
         # Alt çubuk
-        bf = ttk.Frame(r, padding=(14, 4, 14, 10))
+        bf = ttk.Frame(r, padding=(14, 4, 14, 4))
         bf.pack(fill="x")
         ttk.Button(bf, text="⚙ Puanlama ayarları", command=self.open_settings).pack(side="left")
         ttk.Button(bf, text="Puana göre sırala", command=self.sort_by_score).pack(side="left", padx=6)
         ttk.Button(bf, text="Seçileni sil", command=self.delete_selected).pack(side="left")
         ttk.Button(bf, text="Excel'den içe aktar", command=self.import_from_excel).pack(side="left", padx=(18, 0))
         ttk.Button(bf, text="Excel'e aktar", command=self.export_to_excel).pack(side="left", padx=6)
-        self.status = ttk.Label(bf, text="", foreground="#555")
+        self.status = ttk.Label(bf, text="", foreground="#6B665A")
         self.status.pack(side="right")
-        ttk.Label(r, foreground="#888", padding=(14, 0, 14, 8),
-                  text="İpucu: Hücreye çift tıkla → düzenle. Puan hücresinde Enter = aşağı, Tab = sağa, "
-                       "Esc = vazgeç, boş bırak = puanı sil. Başlığa tıklayarak sırala."
+        ttk.Label(r, foreground="#8A8472", padding=(14, 0, 14, 8),
+                  text="Hücreye çift tıkla → düzenle · Enter = aşağı, Tab = sağa, Esc = vazgeç, boş bırak = puanı sil · "
+                       "Satır ne kadar koyu yeşilse skoru o kadar yüksek · Başlığa tıklayarak sırala"
                   ).pack(fill="x")
 
     # ---------------------------------------------------------------- sütunlar
+    # ---------------------------------------------------------------- sütunlar
     def col_ids(self):
         return self.FIXED + ["c_" + c["id"] for c in self.data["criteria"]] + ["score"]
+
+    def heading_text(self, cid):
+        if cid in self.FIXED_LABELS:
+            return self.FIXED_LABELS[cid]
+        if cid == "score":
+            return "Öncelik Skoru"
+        c = next(c for c in self.data["criteria"] if "c_" + c["id"] == cid)
+        return short(c["name"], 22)
 
     def rebuild_columns(self):
         ids = self.col_ids()
         self.tree["columns"] = ids
         self.tree["displaycolumns"] = ids
         self.update_headings()
-        widths = {"title": 330, "author": 200, "genre": 130, "pages": 70}
         for cid in ids:
-            if cid in widths:
-                self.tree.column(cid, width=widths[cid], stretch=(cid == "title"),
-                                 anchor="center" if cid == "pages" else "w", minwidth=50)
+            if cid == "title":
+                self.tree.column(cid, width=320, minwidth=200, stretch=True, anchor="w")
+            elif cid == "author":
+                self.tree.column(cid, width=200, minwidth=100, stretch=False, anchor="w")
+            elif cid == "genre":
+                self.tree.column(cid, width=130, minwidth=80, stretch=False, anchor="w")
+            elif cid == "pages":
+                self.tree.column(cid, width=70, minwidth=50, stretch=False, anchor="center")
             elif cid == "score":
-                self.tree.column(cid, width=110, stretch=False, anchor="center", minwidth=80)
-            else:
-                name = next(c["name"] for c in self.data["criteria"] if "c_" + c["id"] == cid)
-                self.tree.column(cid, width=min(max(len(name) * 8 + 36, 100), 230),
-                                 stretch=False, anchor="center", minwidth=70)
+                self.tree.column(cid, width=130, minwidth=90, stretch=False, anchor="center")
+            else:   # ölçüt sütunu: başlığa göre dar tut, puanlar zaten 1-2 karakter
+                w = self.font_head.measure(self.heading_text(cid)) + 46
+                self.tree.column(cid, width=max(84, min(200, w)), minwidth=60, stretch=False, anchor="center")
+
+    def autosize_columns(self):
+        """Kitap adı / yazar / tür sütunlarını içeriğe göre ayarla (kesilmesin)."""
+        books = self.data["books"]
+        f = self.font_normal
+
+        def best(key, lo, hi):
+            w = max((f.measure(str(b.get(key) or "")) for b in books), default=0)
+            return max(lo, min(hi, w + 30))
+
+        self.tree.column("title", width=best("title", 260, 560))
+        self.tree.column("author", width=best("author", 150, 280))
+        self.tree.column("genre", width=best("genre", 110, 190))
 
     def update_headings(self):
         for cid in self.col_ids():
-            if cid in self.FIXED_LABELS:
-                text = self.FIXED_LABELS[cid]
-            elif cid == "score":
-                text = "Öncelik Skoru"
-            else:
-                c = next(c for c in self.data["criteria"] if "c_" + c["id"] == cid)
-                text = f"{c['name']} ({c_range(self.data)})"
+            text = self.heading_text(cid)
             if cid == self.sort_col:
                 text += " ▼" if self.sort_rev else " ▲"
             self.tree.heading(cid, text=text, command=lambda c=cid: self.sort_by(c))
 
+    # ---------------------------------------------------------------- tablo
     # ---------------------------------------------------------------- tablo
     def row_values(self, b):
         cs = self.data["criteria"]
@@ -677,13 +793,17 @@ class NextBookApp:
         return vals
 
     def row_tag(self, b):
-        return ("scored",) if is_scored(b, self.data["criteria"]) else ("unscored",)
+        cs = self.data["criteria"]
+        if not is_scored(b, cs):
+            return ("unscored",)
+        return (f"s{score_bucket(compute_score(b, cs), self.data['scale_max'])}",)
 
     def refresh_table(self):
         self.finish_edit(False)
         self.tree.delete(*self.tree.get_children())
         for b in self.data["books"]:
             self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b))
+        self.autosize_columns()
         self.update_status()
 
     def update_row(self, b):
@@ -781,24 +901,27 @@ class NextBookApp:
     def show_results(self, results):
         self.results = results
         self.res_tree.delete(*self.res_tree.get_children())
+        if not results:
+            self.res_frame.pack_forget()
+            self.set_status("Sonuç bulunamadı. Yazımı değiştirmeyi ya da “+ Elle ekle”yi deneyin.")
+            return
         for i, r in enumerate(results):
             added = self.find_duplicate(r) is not None
             self.res_tree.insert("", "end", iid=str(i), tags=("added",) if added else (),
                                  values=(("✓ " if added else "") + r["title"], r["author"], r["genre"],
                                          r["pages"] or "", r["year"]))
-        self.update_status()
-        if not results:
-            self.set_status("Sonuç bulunamadı. Yazımı değiştirmeyi ya da “+ Elle ekle”yi deneyin.")
-        else:
-            self.set_status(f"{len(results)} sonuç bulundu. Eklemek için çift tıklayın.")
+        self.res_frame.pack(fill="x", padx=14, pady=(8, 4), before=self.main_frame)
+        self.set_status(f"{len(results)} sonuç bulundu. Eklemek için çift tıklayın.")
 
     def clear_search(self):
         self.title_var.set("")
         self.author_var.set("")
         self.results = []
         self.res_tree.delete(*self.res_tree.get_children())
+        self.res_frame.pack_forget()
         self.update_status()
 
+    # ---------------------------------------------------------------- ekleme / silme
     # ---------------------------------------------------------------- ekleme / silme
     def find_duplicate(self, r):
         tkey = (r["title"].casefold(), (r["author"] or "").casefold())
@@ -833,6 +956,7 @@ class NextBookApp:
         self.data["books"].append(b)
         self.save()
         self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b))
+        self.autosize_columns()
         self.tree.selection_set(b["id"])
         self.tree.see(b["id"])
         self.update_status()
@@ -1023,13 +1147,13 @@ class NextBookApp:
         self.root.destroy()
 
 
-def c_range(data):
-    return f"1-{data['scale_max']}"
-
-
 def main():
     try:   # Windows'ta net yazı için
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+    try:   # görev çubuğunda Python değil Next Book simgesi görünsün
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("NextBook.App")
     except Exception:
         pass
     root = tk.Tk()
