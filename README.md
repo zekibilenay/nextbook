@@ -60,7 +60,7 @@ Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL
 git tag v1.4.1
 git push --tags
 ```
-GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki `apps.nextbook.latest` değerini güncelle. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, update `apps.nextbook.latest` in the feed.
+GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.2 çıkınca `1.4.1`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.1` when 1.4.2 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
 
 ## Değişiklikler / Changelog
 

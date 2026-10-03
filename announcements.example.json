@@ -1,11 +1,6 @@
 {
   "schema": 1,
-  "apps": {
-    "nextbook": {
-      "latest": "1.4.1",
-      "url": "https://github.com/zekibilenay/nextbook/releases/latest"
-    }
-  },
+  "apps": {},
   "announcements": [
     {
       "id": "nextbook-yeni-surum-1-4-1",
