@@ -4,8 +4,8 @@
 Next Book — personal reading-priority list (Windows desktop app)
 
 * Searches Open Library for title, author, genre and page count only.
-* Each book becomes one row. Unscored rows are faded; scored rows get
-  more intense the higher the score.
+* Each book becomes one row. Scored rows get more intense the higher the
+  score; unscored rows use normal text.
 * Scoring criteria and their weights are fully user-defined.
 * 6 languages, 6 colour themes, font choice, Excel import/export.
 
@@ -35,7 +35,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
@@ -48,6 +48,11 @@ ANNOUNCE_URL = os.environ.get("NEXTBOOK_ANNOUNCE_URL",
                               "https://zekibilenay.github.io/announcements/feed.json")
 ANNOUNCE_REFRESH_MS = 6 * 60 * 60 * 1000       # açık kaldığı sürece 6 saatte bir yeniden sor
 ANNOUNCE_ROTATE_MS = 10_000                     # birden çok duyuru varsa değişme süresi
+
+# Yazı tipi seçicide yalnızca bilgisayarlarda yaygın, okunaklı bu yazı tipleri sunulur
+# (bilgisayarda yüklü olmayanlar listeden otomatik çıkar).
+FONT_CHOICES = ("Segoe UI", "Calibri", "Arial", "Verdana", "Tahoma", "Trebuchet MS",
+                "Georgia", "Cambria", "Times New Roman", "Consolas")
 
 DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
 DEFAULT_SCALE_MAX = 5
@@ -62,7 +67,6 @@ LANGS = [("tr", "Türkçe"), ("en", "English"), ("ru", "Русский"),
 
 I18N = {
 "tr": {
- "tagline": "Ara → listeye ekle → puanla → okuma sırası belli olsun",
  "lbl_title": "Kitap adı", "lbl_author": "Yazar (isteğe bağlı)",
  "btn_search": "Ara", "btn_clear": "Temizle", "btn_manual": "+ Elle ekle",
  "results_title": " Arama sonuçları — eklemek için çift tıkla ",
@@ -110,16 +114,23 @@ I18N = {
  "font_title": "Yazı tipi", "font_family": "Yazı tipi", "font_size": "Boyut",
  "font_preview": "Okuma sırası belli olsun — Aa Bb 123", "font_reset": "Varsayılan", "btn_apply": "Uygula",
  "about_title": "Hakkında",
- "about_text": "Next Book {version}\n\nÜcretsiz ve açık kaynaklı kişisel okuma listesi.\n{repo}\n\n"
-               "Verilerin yalnızca bilgisayarında tutulur:\n{path}\n\nAğ bağlantıları: arama yaparken openlibrary.org ve duyuruları almak için duyuru sunucusu (kimlik bilgisi göndermez).",
  "crit_1": "İlgi Düzeyi", "crit_2": "Kişisel Katkı", "crit_3": "Okuma Kolaylığı",
  "crit_4": "Sosyal Bağlam", "crit_5": "Uzun Vadeli / Referans Değeri",
  "ann_new_version": "Yeni sürüm yayınlandı: {latest} (sizdeki: {current})", "ann_open_q": "Bağlantı tarayıcıda açılsın mı?\n{url}",
- "ann_dismiss": "Bu duyuruyu kapat",
+ "ann_board_title": "Duyurular",
+ "ann_empty": "Şu an duyuru yok.",
+ "ann_type_update": "Güncelleme",
+ "ann_type_new_app": "Yeni uygulama",
+ "ann_type_info": "Bilgi",
+ "ann_open": "Bağlantıyı aç",
+ "btn_close": "Kapat",
+ "about_hello": "Merhaba! Ben Zeki. Next Book'u, okuyacağın kitapları kendi ölçütlerine göre puanlayıp sana doğru okuma sırasını göstermesi için geliştiriyorum.",
+ "about_privacy": "Verilerin yalnızca bilgisayarında kalır; hesap gerektirmez. İnternet yalnızca kitap araması (Open Library) ve duyurular için kullanılır.",
+ "about_source": "Kaynak kodu (GitHub)",
+ "about_data": "Veri klasörü",
         "data_recovered": "Veri dosyan okunamadı (bozulmuş olabilir). Yeni bir liste ile başlandı; eski dosya şuraya yedeklendi:\n{path}",
 },
 "en": {
- "tagline": "Search → add to list → score → know what to read next",
  "lbl_title": "Book title", "lbl_author": "Author (optional)",
  "btn_search": "Search", "btn_clear": "Clear", "btn_manual": "+ Add manually",
  "results_title": " Search results — double-click to add ",
@@ -167,16 +178,23 @@ I18N = {
  "font_title": "Font", "font_family": "Font", "font_size": "Size",
  "font_preview": "Know what to read next — Aa Bb 123", "font_reset": "Default", "btn_apply": "Apply",
  "about_title": "About",
- "about_text": "Next Book {version}\n\nA free, open-source personal reading list.\n{repo}\n\n"
-               "Your data stays on your computer:\n{path}\n\nNetwork connections: openlibrary.org when you search, and the announcement server for news (no identifying data is sent).",
  "crit_1": "Interest", "crit_2": "Personal Value", "crit_3": "Ease of Reading",
  "crit_4": "Social Context", "crit_5": "Long-term / Reference Value",
  "ann_new_version": "A new version is out: {latest} (you have {current})", "ann_open_q": "Open this link in your browser?\n{url}",
- "ann_dismiss": "Dismiss this announcement",
+ "ann_board_title": "Announcements",
+ "ann_empty": "No announcements right now.",
+ "ann_type_update": "Update",
+ "ann_type_new_app": "New app",
+ "ann_type_info": "Info",
+ "ann_open": "Open link",
+ "btn_close": "Close",
+ "about_hello": "Hi! I'm Zeki. I'm building Next Book to help you score the books you want to read by your own criteria and see what to read next.",
+ "about_privacy": "Your data stays on your computer and no account is needed. The internet is used only for book search (Open Library) and announcements.",
+ "about_source": "Source code (GitHub)",
+ "about_data": "Data folder",
         "data_recovered": "Your data file could not be read (it may be corrupted). A new list was started; the old file was backed up to:\n{path}",
 },
 "ru": {
- "tagline": "Найти → добавить в список → оценить → узнать, что читать дальше",
  "lbl_title": "Название книги", "lbl_author": "Автор (необязательно)",
  "btn_search": "Найти", "btn_clear": "Очистить", "btn_manual": "+ Добавить вручную",
  "results_title": " Результаты поиска — двойной щелчок, чтобы добавить ",
@@ -224,16 +242,23 @@ I18N = {
  "font_title": "Шрифт", "font_family": "Шрифт", "font_size": "Размер",
  "font_preview": "Узнайте, что читать дальше — Aa Bb 123", "font_reset": "По умолчанию", "btn_apply": "Применить",
  "about_title": "О программе",
- "about_text": "Next Book {version}\n\nБесплатный личный список чтения с открытым исходным кодом.\n{repo}\n\n"
-               "Ваши данные хранятся только на вашем компьютере:\n{path}\n\nСетевые подключения: openlibrary.org при поиске и сервер объявлений для новостей (идентификационные данные не отправляются).",
  "crit_1": "Интерес", "crit_2": "Личная польза", "crit_3": "Лёгкость чтения",
  "crit_4": "Социальный контекст", "crit_5": "Долгосрочная ценность / справочник",
  "ann_new_version": "Вышла новая версия: {latest} (у вас {current})", "ann_open_q": "Открыть ссылку в браузере?\n{url}",
- "ann_dismiss": "Закрыть это объявление",
+ "ann_board_title": "Объявления",
+ "ann_empty": "Сейчас объявлений нет.",
+ "ann_type_update": "Обновление",
+ "ann_type_new_app": "Новое приложение",
+ "ann_type_info": "Информация",
+ "ann_open": "Открыть ссылку",
+ "btn_close": "Закрыть",
+ "about_hello": "Привет! Я Зеки. Я создаю Next Book, чтобы вы могли оценивать книги, которые хотите прочитать, по собственным критериям и видеть, что читать дальше.",
+ "about_privacy": "Ваши данные остаются на вашем компьютере, учётная запись не нужна. Интернет используется только для поиска книг (Open Library) и объявлений.",
+ "about_source": "Исходный код (GitHub)",
+ "about_data": "Папка данных",
         "data_recovered": "Не удалось прочитать файл данных (возможно, он повреждён). Начат новый список; старый файл сохранён здесь:\n{path}",
 },
 "de": {
- "tagline": "Suchen → zur Liste hinzufügen → bewerten → wissen, was als Nächstes dran ist",
  "lbl_title": "Buchtitel", "lbl_author": "Autor (optional)",
  "btn_search": "Suchen", "btn_clear": "Leeren", "btn_manual": "+ Manuell hinzufügen",
  "results_title": " Suchergebnisse — Doppelklick zum Hinzufügen ",
@@ -281,16 +306,23 @@ I18N = {
  "font_title": "Schriftart", "font_family": "Schriftart", "font_size": "Größe",
  "font_preview": "Wissen, was als Nächstes dran ist — Aa Bb 123", "font_reset": "Standard", "btn_apply": "Anwenden",
  "about_title": "Info",
- "about_text": "Next Book {version}\n\nEine kostenlose Open-Source-Leseliste.\n{repo}\n\n"
-               "Deine Daten bleiben auf deinem Computer:\n{path}\n\nNetzwerkverbindungen: openlibrary.org bei der Suche und der Ankündigungsserver für Neuigkeiten (es werden keine identifizierenden Daten gesendet).",
  "crit_1": "Interesse", "crit_2": "Persönlicher Nutzen", "crit_3": "Leichte Lesbarkeit",
  "crit_4": "Sozialer Kontext", "crit_5": "Langfristiger / Referenzwert",
  "ann_new_version": "Neue Version verfügbar: {latest} (installiert: {current})", "ann_open_q": "Link im Browser öffnen?\n{url}",
- "ann_dismiss": "Diese Ankündigung schließen",
+ "ann_board_title": "Ankündigungen",
+ "ann_empty": "Derzeit keine Ankündigungen.",
+ "ann_type_update": "Update",
+ "ann_type_new_app": "Neue App",
+ "ann_type_info": "Info",
+ "ann_open": "Link öffnen",
+ "btn_close": "Schließen",
+ "about_hello": "Hallo! Ich bin Zeki. Ich entwickle Next Book, damit du die Bücher, die du lesen möchtest, nach eigenen Kriterien bewerten kannst und siehst, was als Nächstes dran ist.",
+ "about_privacy": "Deine Daten bleiben auf deinem Computer, ein Konto ist nicht nötig. Das Internet wird nur für die Buchsuche (Open Library) und für Ankündigungen genutzt.",
+ "about_source": "Quellcode (GitHub)",
+ "about_data": "Datenordner",
         "data_recovered": "Deine Datendatei konnte nicht gelesen werden (möglicherweise beschädigt). Es wurde eine neue Liste angelegt; die alte Datei wurde hier gesichert:\n{path}",
 },
 "fr": {
- "tagline": "Rechercher → ajouter à la liste → noter → savoir quoi lire ensuite",
  "lbl_title": "Titre du livre", "lbl_author": "Auteur (facultatif)",
  "btn_search": "Rechercher", "btn_clear": "Effacer", "btn_manual": "+ Ajouter manuellement",
  "results_title": " Résultats — double-clic pour ajouter ",
@@ -338,16 +370,23 @@ I18N = {
  "font_title": "Police", "font_family": "Police", "font_size": "Taille",
  "font_preview": "Savoir quoi lire ensuite — Aa Bb 123", "font_reset": "Par défaut", "btn_apply": "Appliquer",
  "about_title": "À propos",
- "about_text": "Next Book {version}\n\nUne liste de lecture personnelle, gratuite et open source.\n{repo}\n\n"
-               "Vos données restent sur votre ordinateur :\n{path}\n\nConnexions réseau : openlibrary.org lors d'une recherche et le serveur d'annonces pour les actualités (aucune donnée d'identification n'est envoyée).",
  "crit_1": "Intérêt", "crit_2": "Apport personnel", "crit_3": "Facilité de lecture",
  "crit_4": "Contexte social", "crit_5": "Valeur à long terme / de référence",
  "ann_new_version": "Nouvelle version disponible : {latest} (vous avez {current})", "ann_open_q": "Ouvrir ce lien dans le navigateur ?\n{url}",
- "ann_dismiss": "Fermer cette annonce",
+ "ann_board_title": "Annonces",
+ "ann_empty": "Aucune annonce pour le moment.",
+ "ann_type_update": "Mise à jour",
+ "ann_type_new_app": "Nouvelle application",
+ "ann_type_info": "Info",
+ "ann_open": "Ouvrir le lien",
+ "btn_close": "Fermer",
+ "about_hello": "Bonjour ! Moi, c'est Zeki. Je développe Next Book pour vous aider à noter les livres que vous voulez lire selon vos propres critères et à savoir quoi lire ensuite.",
+ "about_privacy": "Vos données restent sur votre ordinateur, aucun compte n'est nécessaire. Internet n'est utilisé que pour la recherche de livres (Open Library) et les annonces.",
+ "about_source": "Code source (GitHub)",
+ "about_data": "Dossier de données",
         "data_recovered": "Votre fichier de données est illisible (peut-être corrompu). Une nouvelle liste a été créée ; l'ancien fichier a été sauvegardé ici :\n{path}",
 },
 "zh": {
- "tagline": "搜索 → 加入列表 → 打分 → 知道下一本读什么",
  "lbl_title": "书名", "lbl_author": "作者（可选）",
  "btn_search": "搜索", "btn_clear": "清除", "btn_manual": "+ 手动添加",
  "results_title": " 搜索结果 — 双击添加 ",
@@ -393,12 +432,20 @@ I18N = {
  "font_title": "字体", "font_family": "字体", "font_size": "字号",
  "font_preview": "知道下一本读什么 — Aa Bb 123", "font_reset": "默认", "btn_apply": "应用",
  "about_title": "关于",
- "about_text": "Next Book {version}\n\n免费、开源的个人阅读清单。\n{repo}\n\n"
-               "你的数据只保存在你的电脑上：\n{path}\n\n网络连接：搜索时访问 openlibrary.org，以及用于获取公告的公告服务器（不会发送任何身份信息）。",
  "crit_1": "兴趣程度", "crit_2": "个人收获", "crit_3": "阅读难易",
  "crit_4": "社交相关", "crit_5": "长期 / 参考价值",
  "ann_new_version": "新版本已发布：{latest}（当前：{current}）", "ann_open_q": "在浏览器中打开此链接？\n{url}",
- "ann_dismiss": "关闭此公告",
+ "ann_board_title": "公告",
+ "ann_empty": "目前没有公告。",
+ "ann_type_update": "更新",
+ "ann_type_new_app": "新应用",
+ "ann_type_info": "信息",
+ "ann_open": "打开链接",
+ "btn_close": "关闭",
+ "about_hello": "你好！我是 Zeki。我开发 Next Book，是为了让你按自己的标准给想读的书打分，并清楚下一本该读什么。",
+ "about_privacy": "你的数据只保存在你的电脑上，无需账号。网络仅用于图书搜索（Open Library）和公告。",
+ "about_source": "源代码 (GitHub)",
+ "about_data": "数据文件夹",
         "data_recovered": "无法读取你的数据文件（可能已损坏）。已创建新的列表，旧文件已备份到：\n{path}",
 },
 }
@@ -738,10 +785,16 @@ def safe_url(u):
 
 
 def _loc(value, lang):
+    """Çok dilli metinden kullanıcının dilini seç: önce lang, sonra en, sonra herhangi bir dil.
+    Anahtarlar 'tr', 'zh-CN', 'zh_cn' gibi yazılmış olabilir; yalnızca ana dil koduna bakılır."""
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        return value.get(lang) or value.get("en") or next((x for x in value.values() if isinstance(x, str)), "")
+        by_lang = {}
+        for k, v in value.items():
+            if isinstance(v, str) and v.strip():
+                by_lang.setdefault(str(k).strip().lower().replace("_", "-").split("-")[0], v)
+        return by_lang.get(lang) or by_lang.get("en") or next(iter(by_lang.values()), "")
     return ""
 
 
@@ -808,7 +861,7 @@ def select_announcements(feed, app_id, version, lang, dismissed=(), today=None):
                 continue
             if a.get("expires") and today > datetime.date.fromisoformat(str(a["expires"])):
                 continue
-            text = " ".join(_loc(a.get("text"), lang).split())[:300]
+            text = " ".join(_loc(a.get("text"), lang).split())[:600]
             if not text:
                 continue
             kind = a.get("type") if a.get("type") in ("update", "new_app", "info") else "info"
@@ -1173,9 +1226,9 @@ def _xl_text(cell, value):
 
 
 def export_excel(data, path):
-    """Formüllü, gri/italik puansız satırlı, renk skalalı ve veri çubuklu çıktı."""
+    """Formüllü, renk skalalı ve veri çubuklu çıktı."""
     from openpyxl import Workbook
-    from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
+    from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter as L
 
@@ -1229,9 +1282,6 @@ def export_excel(data, path):
 
     last = len(books) + 101   # sonradan Excel'de eklenecek satırlar için pay
     sc = L(score_col)
-    ws.conditional_formatting.add(
-        f"A2:{sc}{last}",
-        FormulaRule(formula=[f'AND($A2<>"",${sc}2=0)'], font=Font(italic=True, color="8A94A6")))
     ws.conditional_formatting.add(
         f"E2:{L(4+n)}{last}",
         ColorScaleRule(start_type="num", start_value=1, start_color="FBE5E1",
@@ -1322,6 +1372,148 @@ class LanguageDialog(tk.Toplevel):
 
 
 # ============================================================================
+# HAKKINDA KARTI
+# ============================================================================
+
+class AboutDialog(tk.Toplevel):
+    """Hakkında kartı: tema renklerine uyar, 6 dilde."""
+
+    WIDTH = 440
+
+    def __init__(self, app):
+        super().__init__(app.root)
+        t = app.theme
+        fam, size = app.default_family(), app.font_size
+        small = max(8, size - 1)
+        self.title(T("about_title"))
+        self.configure(bg=t["bg"], padx=28, pady=24)
+        self.transient(app.root)
+        self.resizable(False, False)
+        try:
+            self.iconbitmap(resource_path("next_book.ico"))
+        except Exception:
+            pass
+
+        tk.Label(self, text=APP_NAME.upper(), font=(fam, small, "bold"),
+                 bg=t["bg"], fg=t["muted"], anchor="w").pack(fill="x")
+        tk.Label(self, text=T("about_title"), font=(fam, size + 10, "bold"),
+                 bg=t["bg"], fg=t["title_fg"], anchor="w").pack(fill="x", pady=(2, 6))
+        tk.Label(self, text=f"{APP_NAME} v{APP_VERSION}", font=(fam, small, "bold"),
+                 bg=t["bg"], fg=t["accent"], anchor="w").pack(fill="x", pady=(0, 14))
+        for key in ("about_hello", "about_privacy"):
+            tk.Label(self, text=T(key), font=app.font_normal, bg=t["bg"], fg=t["text"],
+                     justify="left", anchor="w", wraplength=self.WIDTH).pack(fill="x", pady=(0, 10))
+
+        link = tk.Label(self, text="↗  " + T("about_source"), font=(fam, size, "bold underline"),
+                        bg=t["bg"], fg=t["title_fg"], cursor="hand2", anchor="w")
+        link.pack(fill="x", pady=(6, 4))
+        link.bind("<Button-1>", lambda _e: webbrowser.open(REPO_URL))
+        tk.Label(self, text=f"{T('about_data')}: {DATA_DIR}", font=(fam, small), bg=t["bg"], fg=t["muted"],
+                 justify="left", anchor="w", wraplength=self.WIDTH).pack(fill="x", pady=(4, 0))
+
+        btns = tk.Frame(self, bg=t["bg"])
+        btns.pack(fill="x", pady=(18, 0))
+        ttk.Button(btns, text=T("btn_close"), style="Accent.TButton", command=self.destroy).pack(side="right")
+        self.bind("<Escape>", lambda _e: self.destroy())
+        try:
+            self.update_idletasks()
+            center_on_parent(self, app.root, self.winfo_reqwidth(), self.winfo_reqheight())
+        except tk.TclError:
+            pass
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.focus_set()
+
+
+# ============================================================================
+# DUYURU PANOSU (başlıktaki duyuru kutusuna tıklayınca açılır)
+# ============================================================================
+
+class AnnouncementBoard(tk.Toplevel):
+    def __init__(self, app, items):
+        super().__init__(app.root)
+        self.app = app
+        t = app.theme
+        fam, size = app.default_family(), app.font_size
+        small = (fam, max(8, size - 1), "bold")
+        self.labels = []
+        self.title(T("ann_board_title"))
+        self.configure(bg=t["bg"])
+        self.transient(app.root)
+        self.minsize(420, 320)
+        try:
+            self.iconbitmap(resource_path("next_book.ico"))
+        except Exception:
+            pass
+
+        head = tk.Frame(self, bg=t["bg"])
+        head.pack(side="top", fill="x", padx=20, pady=(16, 8))
+        tk.Label(head, text=T("ann_board_title"), font=(fam, size + 7, "bold"),
+                 bg=t["bg"], fg=t["title_fg"]).pack(side="left")
+        if items:
+            tk.Label(head, text=str(len(items)), font=small, bg=t["accent"], fg=t["accent_fg"],
+                     padx=8, pady=1).pack(side="left", padx=10)
+
+        foot = tk.Frame(self, bg=t["bg"])
+        foot.pack(side="bottom", fill="x", padx=20, pady=(8, 16))
+        ttk.Button(foot, text=T("btn_close"), style="Accent.TButton", command=self.destroy).pack(side="right")
+
+        mid = tk.Frame(self, bg=t["bg"])
+        mid.pack(side="top", fill="both", expand=True, padx=(20, 8))
+        self.canvas = tk.Canvas(mid, bg=t["bg"], highlightthickness=0, bd=0)
+        sb = ttk.Scrollbar(mid, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.inner = tk.Frame(self.canvas, bg=t["bg"])
+        self.win_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.bind("<MouseWheel>", self._on_wheel)
+        self.bind("<Escape>", lambda _e: self.destroy())
+
+        if not items:
+            msg = tk.Label(self.inner, text=T("ann_empty"), font=app.font_normal, bg=t["bg"], fg=t["muted"],
+                           justify="left", anchor="w", wraplength=480)
+            msg.pack(fill="x", pady=20)
+            self.labels.append(msg)
+        bars = {"update": t["accent"], "new_app": t["header_bg"], "info": t["muted"]}
+        for a in items:
+            card = tk.Frame(self.inner, bg=t["field"], highlightthickness=1, highlightbackground=t["border"])
+            card.pack(fill="x", pady=(0, 10), padx=(0, 6))
+            tk.Frame(card, bg=bars.get(a["type"], t["muted"]), width=5).pack(side="left", fill="y")
+            body = tk.Frame(card, bg=t["field"])
+            body.pack(side="left", fill="both", expand=True, padx=14, pady=10)
+            tk.Label(body, text=f'{app.ANN_ICON.get(a["type"], "")}  {T("ann_type_" + a["type"])}', font=small,
+                     bg=t["field"], fg=t["muted"], anchor="w").pack(fill="x")
+            msg = tk.Label(body, text=a["text"], font=app.font_normal, bg=t["field"], fg=t["field_fg"],
+                           justify="left", anchor="w", wraplength=480)
+            msg.pack(fill="x", pady=(4, 0))
+            self.labels.append(msg)
+            if a.get("url"):
+                ttk.Button(body, text="↗  " + T("ann_open"),
+                           command=lambda u=a["url"], tx=a["text"]: app.open_url_confirmed(tx, u, parent=self)
+                           ).pack(anchor="w", pady=(8, 0))
+
+        center_on_parent(self, app.root, 600, 520)
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.focus_set()
+
+    def _on_canvas_resize(self, e):
+        self.canvas.itemconfigure(self.win_id, width=e.width)
+        for lbl in self.labels:
+            lbl.configure(wraplength=max(200, e.width - 70))
+
+    def _on_wheel(self, e):
+        self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+
+
+# ============================================================================
 # YAZI TİPİ PENCERESİ
 # ============================================================================
 
@@ -1334,7 +1526,13 @@ class FontDialog(tk.Toplevel):
         self.configure(bg=t["bg"])
         self.transient(app.root)
         self.resizable(False, False)
-        families = sorted({f for f in tkfont.families() if f and not f.startswith("@")}, key=str.casefold)
+        installed = {f for f in tkfont.families() if f and not f.startswith("@")}
+        families = [f for f in FONT_CHOICES if f in installed]
+        dflt = app.language_default_family()
+        if dflt in installed and dflt not in families:   # ör. Çince arayüzün varsayılanı
+            families.insert(0, dflt)
+        if not families:   # Windows dışında hiçbiri yoksa tüm listeyi göster
+            families = sorted(installed, key=str.casefold)
         self.fam_var = tk.StringVar(value=app.default_family())
         self.size_var = tk.StringVar(value=str(app.font_size))
 
@@ -1556,9 +1754,11 @@ class NextBookApp:
     def __init__(self, root):
         self.root = root
         self.settings = load_settings()
+        self.settings.pop("dismissed_ann", None)   # duyurular artık kapatılamıyor; eski kayıt gereksiz
         self.theme_name = self.settings.get("theme") if self.settings.get("theme") in THEMES else DEFAULT_THEME
         self.theme = THEMES[self.theme_name]
-        self.font_family = self.settings.get("font_family") or None
+        fam = self.settings.get("font_family")
+        self.font_family = fam if fam in FONT_CHOICES else None   # listede olmayan eski seçim varsayılana döner
         try:
             self.font_size = max(8, min(18, int(self.settings.get("font_size", 10))))
         except (TypeError, ValueError):
@@ -1572,6 +1772,7 @@ class NextBookApp:
         self.ann_idx = 0
         self.ann_cur = None
         self._ann_job = None
+        self._ann_over = False
         self.edit = None
         self.sort_col = None
         self.sort_rev = False
@@ -1638,12 +1839,11 @@ class NextBookApp:
     def _make_fonts(self):
         fam, size = self.default_family(), self.font_size
         self.font_normal = tkfont.Font(family=fam, size=size)
-        self.font_italic = tkfont.Font(family=fam, size=size, slant="italic")
         self.font_head = tkfont.Font(family=fam, size=size, weight="bold")
 
     def _apply_fonts(self):
         fam, size = self.default_family(), self.font_size
-        for f in (self.font_normal, self.font_italic, self.font_head):
+        for f in (self.font_normal, self.font_head):
             f.configure(family=fam, size=size)
         for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
             try:
@@ -1770,18 +1970,23 @@ class NextBookApp:
         ttk.Button(box, text="ⓘ", width=3, style="Tool.TButton",
                    command=self.show_about).pack(side="left", padx=(6, 0))
 
-        # duyuru kutusu (kırmızı alan): duyuru yoksa slogan görünür
+        # duyuru kutusu: kapatılamaz; üstüne gelince vurgulanır, tıklayınca duyuru panosu açılır.
+        # settings.json içinde "announcements": false ise kutu hiç gösterilmez.
+        self._ann_over = False
         self.ann_frame = tk.Frame(top, bg=t["bg"], bd=0, highlightthickness=1,
-                                  highlightbackground=t["bg"])
-        self.ann_frame.pack(side="left", fill="x", expand=True, padx=(14, 14), pady=(8, 0))
-        self.ann_close = tk.Label(self.ann_frame, text="✕", cursor="hand2", font=self.font_normal)
-        self.ann_close.pack(side="right", padx=(0, 8))
+                                  highlightbackground=t["border"], cursor="hand2")
+        if self.settings.get("announcements", True):
+            self.ann_frame.pack(side="left", fill="x", expand=True, padx=(14, 14), pady=(8, 0))
+        self.ann_more = tk.Label(self.ann_frame, text="›", font=self.font_head, cursor="hand2")
+        self.ann_more.pack(side="right", padx=(0, 10))
         self.ann_label = tk.Label(self.ann_frame, anchor="w", justify="left", width=1,
-                                  font=self.font_normal)
+                                  font=self.font_normal, cursor="hand2")
         self.ann_label.pack(side="left", fill="x", expand=True, padx=8, pady=3)
         self.ann_label.bind("<Configure>", lambda _e: self._fit_announcement())
-        self.ann_label.bind("<Button-1>", lambda _e: self._on_announcement_click())
-        self.ann_close.bind("<Button-1>", lambda _e: self._dismiss_announcement())
+        for w in (self.ann_frame, self.ann_label, self.ann_more):
+            w.bind("<Button-1>", lambda _e: self.open_announcement_board())
+            w.bind("<Enter>", self._ann_enter)
+            w.bind("<Leave>", self._ann_leave)
         self._render_announcement()
 
         # arama
@@ -1834,7 +2039,7 @@ class NextBookApp:
         hs.grid(row=1, column=0, sticky="ew")
         mf.rowconfigure(0, weight=1)
         mf.columnconfigure(0, weight=1)
-        self.tree.tag_configure("unscored", foreground=t["unscored_fg"], background=t["tree_bg"], font=self.font_italic)
+        self.tree.tag_configure("unscored", foreground=t["text"], background=t["tree_bg"], font=self.font_normal)
         for i, col in enumerate(t["ramp"]):
             self.tree.tag_configure(f"s{i}", background=col, foreground=t["scored_fg"], font=self.font_normal)
         self.tree.bind("<Double-1>", self.on_double_click)
@@ -1902,8 +2107,7 @@ class NextBookApp:
     def _active_announcements(self):
         if not self.ann_feed or not self.settings.get("announcements", True):
             return []
-        dismissed = set(self.settings.get("dismissed_ann", []))
-        return select_announcements(self.ann_feed, APP_ID, APP_VERSION, current_language(), dismissed)
+        return select_announcements(self.ann_feed, APP_ID, APP_VERSION, current_language())
 
     def _cancel_ann_job(self):
         if self._ann_job is not None:
@@ -1920,27 +2124,40 @@ class NextBookApp:
         except (AttributeError, tk.TclError):
             return
         self._cancel_ann_job()
-        t = self.theme
         items = self._active_announcements()
         if not items:
+            self.ann_idx = 0
             self.ann_cur = None
-            self.ann_full = "   " + T("tagline")
-            self.ann_frame.configure(bg=t["bg"], highlightbackground=t["bg"])
-            self.ann_label.configure(bg=t["bg"], fg=t["muted"], cursor="", font=self.font_normal)
-            self.ann_close.pack_forget()
+            self.ann_full = f'{self.ANN_ICON["info"]}  {T("ann_empty")}'
+            more = "›"
         else:
             self.ann_idx %= len(items)
             cur = self.ann_cur = items[self.ann_idx]
-            bg = t["ramp"][1]
             self.ann_full = f'{self.ANN_ICON[cur["type"]]}  {cur["text"]}'
-            self.ann_frame.configure(bg=bg, highlightbackground=t["accent"])
-            self.ann_label.configure(bg=bg, fg=t["text"], cursor="hand2", font=self.font_head)
-            self.ann_close.configure(bg=bg, fg=t["muted"])
-            if not self.ann_close.winfo_ismapped():
-                self.ann_close.pack(side="right", padx=(0, 8), before=self.ann_label)
+            more = f"{self.ann_idx + 1}/{len(items)}  ›" if len(items) > 1 else "›"
             if len(items) > 1:
                 self._ann_job = self.root.after(ANNOUNCE_ROTATE_MS, self._next_announcement)
+        try:
+            self.ann_more.configure(text=more)
+        except tk.TclError:
+            pass
+        self._paint_announcement()
         self._fit_announcement()
+
+    def _paint_announcement(self):
+        """Kutunun renkleri: duyuru varsa vurgulu, yoksa sade; fare üstündeyken biraz daha koyu."""
+        t = self.theme
+        has = self.ann_cur is not None
+        base = t["ramp"][1] if has else t["bg"]
+        bg = _mix(base, t["accent"], 0.22) if self._ann_over else base
+        edge = t["accent"] if (has or self._ann_over) else t["border"]
+        try:
+            self.ann_frame.configure(bg=bg, highlightbackground=edge)
+            self.ann_label.configure(bg=bg, fg=t["text"] if has else t["muted"],
+                                     font=self.font_head if has else self.font_normal)
+            self.ann_more.configure(bg=bg, fg=t["muted"])
+        except (AttributeError, tk.TclError):
+            pass
 
     def _fit_announcement(self):
         try:
@@ -1954,24 +2171,33 @@ class NextBookApp:
         self.ann_idx += 1
         self._render_announcement()
 
-    def _on_announcement_click(self):
-        cur = self.ann_cur
-        if not cur:
-            return
-        if cur["url"]:
-            if messagebox.askyesno(APP_NAME, cur["text"] + "\n\n" + T("ann_open_q", url=cur["url"])):
-                webbrowser.open(cur["url"])
-        else:
-            messagebox.showinfo(APP_NAME, cur["text"])
+    # ---- fare üstüne gelince vurgula (alt widget'lar arasında geçişte titremesin diye gecikmeli kontrol)
+    def _ann_enter(self, _e=None):
+        self._ann_over = True
+        self._paint_announcement()
 
-    def _dismiss_announcement(self):
-        if not self.ann_cur:
-            return
-        ids = list(self.settings.get("dismissed_ann", []))
-        ids.append(self.ann_cur["id"])
-        self.settings["dismissed_ann"] = ids[-300:]
-        self._persist_settings()
-        self._render_announcement()
+    def _ann_leave(self, _e=None):
+        self.root.after(40, self._ann_check_leave)
+
+    def _ann_check_leave(self):
+        try:
+            w = self.root.winfo_containing(*self.root.winfo_pointerxy())
+            frame = str(self.ann_frame)
+            inside = w is not None and (str(w) == frame or str(w).startswith(frame + "."))
+        except (tk.TclError, KeyError, AttributeError):
+            inside = False
+        if inside != self._ann_over:
+            self._ann_over = inside
+            self._paint_announcement()
+
+    def open_announcement_board(self):
+        self.finish_edit(True)
+        AnnouncementBoard(self, self._active_announcements())
+
+    def open_url_confirmed(self, text, url, parent=None):
+        """Duyuru bağlantısı uzaktan geldiği için açmadan önce kullanıcıya sor."""
+        if messagebox.askyesno(APP_NAME, text + "\n\n" + T("ann_open_q", url=url), parent=parent or self.root):
+            webbrowser.open(url)
 
     # ---------------------------------------------------------------- dil açılır penceresi
     def toggle_lang_popup(self):
@@ -2045,8 +2271,7 @@ class NextBookApp:
         FontDialog(self)
 
     def show_about(self):
-        messagebox.showinfo(T("about_title"),
-                            T("about_text", version=APP_VERSION, repo=REPO_URL, path=str(DATA_DIR)))
+        AboutDialog(self)
 
     # ---------------------------------------------------------------- seçimi temizleme
     def _clear_if_blank(self, tree, event):
