@@ -14,6 +14,7 @@ Optional : pip install openpyxl   (Excel import/export)
 Run      : python next_book.py
 """
 
+import base64
 import ctypes
 import json
 import math
@@ -25,8 +26,10 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+import struct
 import uuid
 import warnings
+import zlib
 import webbrowser
 import datetime
 import tkinter as tk
@@ -35,7 +38,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
@@ -55,7 +58,8 @@ FONT_CHOICES = ("Segoe UI", "Calibri", "Arial", "Verdana", "Tahoma", "Trebuchet 
                 "Georgia", "Cambria", "Times New Roman", "Consolas")
 
 DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
-DEFAULT_SCALE_MAX = 5
+DEFAULT_SCALE_MAX = 10
+STATUSES = ("todo", "reading", "done")           # okunacak · okuyorum · okudum
 MAX_LISTS = 20                                  # en fazla kaç sekme (liste) açılabilir
 
 
@@ -68,14 +72,14 @@ LANGS = [("tr", "Türkçe"), ("en", "English"), ("ru", "Русский"),
 
 I18N = {
 "tr": {
- "lbl_title": "Kitap adı", "lbl_author": "Yazar (isteğe bağlı)",
+ "lbl_title": "Kitap adı", "lbl_author": "Yazar",
  "btn_search": "Ara", "btn_clear": "Temizle", "btn_manual": "+ Elle ekle",
  "results_title": " Arama sonuçları — eklemek için çift tıkla ",
  "btn_add_to_list": "Listeye ekle", "list_title": " Okuma listem ",
  "btn_settings": "⚙ Puanlama ayarları", "btn_sort_score": "Puana göre sırala",
  "btn_delete": "Seçileni sil", "btn_import": "Excel'den içe aktar", "btn_export": "Excel'e aktar",
  "hint": "Hücreye çift tıkla → düzenle · Enter = aşağı, Tab = sağa, Esc = vazgeç, boş bırak = puanı sil · "
-         "Renk ne kadar yoğunsa skor o kadar yüksek · Başlığa tıklayarak sırala",
+         "Renk ne kadar yoğunsa skor o kadar yüksek · Başlığa tıklayarak sırala · Satıra sağ tıkla: durum, sil",
  "col_title": "Kitap Adı", "col_author": "Yazar", "col_genre": "Tür", "col_pages": "Sayfa",
  "col_year": "Yıl", "col_score": "Öncelik Skoru",
  "status_counts": "{total} kitap · {scored} puanlandı · {pending} puan bekliyor",
@@ -133,14 +137,14 @@ I18N = {
         "data_recovered": "Veri dosyan okunamadı (bozulmuş olabilir). Yeni bir liste ile başlandı; eski dosya şuraya yedeklendi:\n{path}",
 },
 "en": {
- "lbl_title": "Book title", "lbl_author": "Author (optional)",
+ "lbl_title": "Book title", "lbl_author": "Author",
  "btn_search": "Search", "btn_clear": "Clear", "btn_manual": "+ Add manually",
  "results_title": " Search results — double-click to add ",
  "btn_add_to_list": "Add to list", "list_title": " My reading list ",
  "btn_settings": "⚙ Scoring settings", "btn_sort_score": "Sort by score",
  "btn_delete": "Delete selected", "btn_import": "Import from Excel", "btn_export": "Export to Excel",
  "hint": "Double-click a cell to edit · Enter = down, Tab = right, Esc = cancel, empty = clear score · "
-         "The more intense the colour, the higher the score · Click a header to sort",
+         "The more intense the colour, the higher the score · Click a header to sort · Right-click a book: status, remove",
  "col_title": "Title", "col_author": "Author", "col_genre": "Genre", "col_pages": "Pages",
  "col_year": "Year", "col_score": "Priority Score",
  "status_counts": "{total} books · {scored} scored · {pending} waiting for a score",
@@ -198,14 +202,14 @@ I18N = {
         "data_recovered": "Your data file could not be read (it may be corrupted). A new list was started; the old file was backed up to:\n{path}",
 },
 "ru": {
- "lbl_title": "Название книги", "lbl_author": "Автор (необязательно)",
+ "lbl_title": "Название книги", "lbl_author": "Автор",
  "btn_search": "Найти", "btn_clear": "Очистить", "btn_manual": "+ Добавить вручную",
  "results_title": " Результаты поиска — двойной щелчок, чтобы добавить ",
  "btn_add_to_list": "Добавить в список", "list_title": " Мой список чтения ",
  "btn_settings": "⚙ Настройки оценки", "btn_sort_score": "Сортировать по оценке",
  "btn_delete": "Удалить выбранное", "btn_import": "Импорт из Excel", "btn_export": "Экспорт в Excel",
  "hint": "Двойной щелчок по ячейке — редактировать · Enter — вниз, Tab — вправо, Esc — отмена, пусто — стереть оценку · "
-         "Чем насыщеннее цвет, тем выше оценка · Щёлкните заголовок для сортировки",
+         "Чем насыщеннее цвет, тем выше оценка · Щёлкните заголовок для сортировки · ПКМ по книге: статус, удалить",
  "col_title": "Название", "col_author": "Автор", "col_genre": "Жанр", "col_pages": "Стр.",
  "col_year": "Год", "col_score": "Приоритет",
  "status_counts": "Книг: {total} · оценено: {scored} · ждут оценки: {pending}",
@@ -263,14 +267,14 @@ I18N = {
         "data_recovered": "Не удалось прочитать файл данных (возможно, он повреждён). Начат новый список; старый файл сохранён здесь:\n{path}",
 },
 "de": {
- "lbl_title": "Buchtitel", "lbl_author": "Autor (optional)",
+ "lbl_title": "Buchtitel", "lbl_author": "Autor",
  "btn_search": "Suchen", "btn_clear": "Leeren", "btn_manual": "+ Manuell hinzufügen",
  "results_title": " Suchergebnisse — Doppelklick zum Hinzufügen ",
  "btn_add_to_list": "Zur Liste hinzufügen", "list_title": " Meine Leseliste ",
  "btn_settings": "⚙ Bewertungseinstellungen", "btn_sort_score": "Nach Bewertung sortieren",
  "btn_delete": "Auswahl löschen", "btn_import": "Aus Excel importieren", "btn_export": "Nach Excel exportieren",
  "hint": "Doppelklick auf eine Zelle zum Bearbeiten · Enter = nach unten, Tab = nach rechts, Esc = abbrechen, leer = Bewertung löschen · "
-         "Je kräftiger die Farbe, desto höher die Bewertung · Klick auf eine Überschrift sortiert",
+         "Je kräftiger die Farbe, desto höher die Bewertung · Klick auf eine Überschrift sortiert · Rechtsklick auf ein Buch: Status, entfernen",
  "col_title": "Titel", "col_author": "Autor", "col_genre": "Genre", "col_pages": "Seiten",
  "col_year": "Jahr", "col_score": "Prioritätswert",
  "status_counts": "{total} Bücher · {scored} bewertet · {pending} warten auf Bewertung",
@@ -328,14 +332,14 @@ I18N = {
         "data_recovered": "Deine Datendatei konnte nicht gelesen werden (möglicherweise beschädigt). Es wurde eine neue Liste angelegt; die alte Datei wurde hier gesichert:\n{path}",
 },
 "fr": {
- "lbl_title": "Titre du livre", "lbl_author": "Auteur (facultatif)",
+ "lbl_title": "Titre du livre", "lbl_author": "Auteur",
  "btn_search": "Rechercher", "btn_clear": "Effacer", "btn_manual": "+ Ajouter manuellement",
  "results_title": " Résultats — double-clic pour ajouter ",
  "btn_add_to_list": "Ajouter à la liste", "list_title": " Ma liste de lecture ",
  "btn_settings": "⚙ Réglages de notation", "btn_sort_score": "Trier par score",
  "btn_delete": "Supprimer la sélection", "btn_import": "Importer depuis Excel", "btn_export": "Exporter vers Excel",
  "hint": "Double-clic sur une cellule pour modifier · Entrée = bas, Tab = droite, Échap = annuler, vide = effacer la note · "
-         "Plus la couleur est intense, plus le score est élevé · Cliquez sur un en-tête pour trier",
+         "Plus la couleur est intense, plus le score est élevé · Cliquez sur un en-tête pour trier · Clic droit sur un livre : statut, retirer",
  "col_title": "Titre", "col_author": "Auteur", "col_genre": "Genre", "col_pages": "Pages",
  "col_year": "Année", "col_score": "Score de priorité",
  "status_counts": "{total} livres · {scored} notés · {pending} en attente de note",
@@ -393,14 +397,14 @@ I18N = {
         "data_recovered": "Votre fichier de données est illisible (peut-être corrompu). Une nouvelle liste a été créée ; l'ancien fichier a été sauvegardé ici :\n{path}",
 },
 "zh": {
- "lbl_title": "书名", "lbl_author": "作者（可选）",
+ "lbl_title": "书名", "lbl_author": "作者",
  "btn_search": "搜索", "btn_clear": "清除", "btn_manual": "+ 手动添加",
  "results_title": " 搜索结果 — 双击添加 ",
  "btn_add_to_list": "加入列表", "list_title": " 我的阅读列表 ",
  "btn_settings": "⚙ 评分设置", "btn_sort_score": "按得分排序",
  "btn_delete": "删除所选", "btn_import": "从 Excel 导入", "btn_export": "导出到 Excel",
  "hint": "双击单元格进行编辑 · Enter = 向下，Tab = 向右，Esc = 取消，留空 = 清除分数 · "
-         "颜色越深，得分越高 · 点击表头可排序",
+         "颜色越深，得分越高 · 点击表头可排序 · 右键点击书籍：状态、删除",
  "col_title": "书名", "col_author": "作者", "col_genre": "类型", "col_pages": "页数",
  "col_year": "年份", "col_score": "优先级得分",
  "status_counts": "共 {total} 本 · 已评分 {scored} 本 · 待评分 {pending} 本",
@@ -493,6 +497,23 @@ for _code, _d in _TAB_STRINGS.items():
     I18N[_code].update(_d)
     I18N[_code]["tab_default"] = I18N[_code]["list_title"].strip()   # ilk listenin varsayılan adı
 
+_ROW_STRINGS = {
+"tr": {"st_todo": "Okunacak", "st_reading": "Okuyorum", "st_done": "Okudum",
+       "col_status": "Durum", "row_delete": "Listeden sil"},
+"en": {"st_todo": "To read", "st_reading": "Reading", "st_done": "Read",
+       "col_status": "Status", "row_delete": "Remove from list"},
+"ru": {"st_todo": "Хочу прочитать", "st_reading": "Читаю", "st_done": "Прочитано",
+       "col_status": "Статус", "row_delete": "Удалить из списка"},
+"de": {"st_todo": "Will ich lesen", "st_reading": "Lese ich gerade", "st_done": "Gelesen",
+       "col_status": "Status", "row_delete": "Aus der Liste entfernen"},
+"fr": {"st_todo": "À lire", "st_reading": "En cours", "st_done": "Lu",
+       "col_status": "Statut", "row_delete": "Retirer de la liste"},
+"zh": {"st_todo": "想读", "st_reading": "在读", "st_done": "已读",
+       "col_status": "状态", "row_delete": "从列表中删除"},
+}
+for _code, _d in _ROW_STRINGS.items():
+    I18N[_code].update(_d)
+
 _LANG = ["en"]
 
 
@@ -522,6 +543,7 @@ _AL_TITLE = _aliases("col_title", ("kitap adı", "kitap", "başlık", "title", "
 _AL_AUTHOR = _aliases("col_author", ("yazar", "author"))
 _AL_GENRE = _aliases("col_genre", ("tür", "kategori", "genre", "category"))
 _AL_PAGES = _aliases("col_pages", ("sayfa sayısı", "sayfa", "pages", "page count"))
+_AL_STATUS = _aliases("col_status", ("durum", "status"))
 _AL_SCORE = _aliases("col_score", ("öncelik skoru", "skor", "priority score", "score"))
 
 
@@ -590,9 +612,9 @@ def resource_path(name):
 
 def score_bucket(score, smax, steps=5):
     """Skoru 0..steps-1 arası bir renk kademesine çevir."""
-    if smax <= 1:
+    if smax <= 0:
         return steps - 1
-    t = max(0.0, min(1.0, (score - 1) / (smax - 1)))
+    t = max(0.0, min(1.0, score / smax))   # 10 üzerinden: 0–2, 2–4, 4–6, 6–8, 8–10
     return min(steps - 1, int(t * steps))
 
 
@@ -814,6 +836,72 @@ def make_ann_icon(kind, size, fill, glyph, bg):
     rows = ann_icon_rows(kind, size, fill, glyph, bg)
     img.put(" ".join("{" + " ".join(r) + "}" for r in rows))
     return img
+
+
+# ============================================================================
+# DURUM ROZETLERİ (okuyorum = oynat, okudum = onay) — satır renginden bağımsız, saydam zeminli
+# ============================================================================
+
+def _seg_dist(x, y, a, b):
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(x - (ax + t * dx), y - (ay + t * dy))
+
+
+def _png_chunk(tag, data):
+    body = tag + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
+def status_icon_png(kind, size, fill, glyph, ring=None):
+    """Yuvarlak rozet (kind: 'reading' = dolu oynat üçgeni, 'done' = onay işareti) → RGBA PNG baytları.
+    4x4 alt örnekleme: kenar yumuşak, zemin saydam; hangi renkli satırın üstünde olursa olsun uyar."""
+    S = float(size)
+    c, R = S / 2.0, S / 2.0 - 0.5
+    rw = max(1.0, S * 0.07) if ring else 0.0
+    tri = [(S * 0.39, S * 0.27), (S * 0.39, S * 0.73), (S * 0.745, S * 0.50)]
+    chk = [((S * 0.27, S * 0.52), (S * 0.43, S * 0.68)), ((S * 0.43, S * 0.68), (S * 0.74, S * 0.34))]
+    hw = S * 0.075
+
+    def in_glyph(x, y):
+        if kind == "reading":
+            return _in_poly(x, y, tri)
+        return any(_seg_dist(x, y, a, b) <= hw for a, b in chk)
+
+    cf, cg = _rgb(fill), _rgb(glyph)
+    cr = _rgb(ring) if ring else cf
+    n = 4
+    raw = bytearray()
+    for py in range(size):
+        raw.append(0)   # PNG satır filtresi: yok
+        for px in range(size):
+            r = g = b = hit = 0
+            for sy in range(n):
+                for sx in range(n):
+                    x, y = px + (sx + 0.5) / n, py + (sy + 0.5) / n
+                    d2 = (x - c) ** 2 + (y - c) ** 2
+                    if d2 > R * R:
+                        continue
+                    col = cg if in_glyph(x, y) else (cr if d2 > (R - rw) ** 2 else cf)
+                    r += col[0]
+                    g += col[1]
+                    b += col[2]
+                    hit += 1
+            if hit:
+                raw += bytes((round(r / hit), round(g / hit), round(b / hit), round(255 * hit / (n * n))))
+            else:
+                raw += b"\x00\x00\x00\x00"
+    return (b"\x89PNG\r\n\x1a\n"
+            + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+            + _png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+            + _png_chunk(b"IEND", b""))
+
+
+def make_status_icon(kind, size, fill, glyph, ring=None):
+    data = base64.b64encode(status_icon_png(kind, size, fill, glyph, ring)).decode("ascii")
+    return tk.PhotoImage(data=data, format="png")
 
 
 # ============================================================================
@@ -1045,6 +1133,12 @@ def new_book(title, author="", genre="", pages=None, key=""):
     }
 
 
+def book_status(b):
+    """'todo' (okunacak) · 'reading' (okuyorum) · 'done' (okudum). Alan yoksa okunacak sayılır."""
+    s = b.get("status")
+    return s if s in ("reading", "done") else "todo"
+
+
 def compute_score(book, criteria):
     """Boş bırakılan ölçütler hesaba katılmaz:
     skor = Σ(puan × ağırlık) / Σ(dolu ölçütlerin ağırlığı)"""
@@ -1103,6 +1197,8 @@ def _validate_data(data, base):
         b.setdefault("genre", "")
         b.setdefault("pages", None)
         b.setdefault("key", "")
+        if b.get("status") not in ("reading", "done"):
+            b.pop("status", None)
         if not isinstance(b.get("scores"), dict):
             b["scores"] = {}
     return data
@@ -1326,6 +1422,15 @@ def _require_openpyxl():
 _SCALE_SUFFIX = re.compile(r"\s*\(\s*\d+\s*-\s*(\d+)\s*\)\s*$")
 
 
+def _status_lookup():
+    """Durum adı (6 dilden biri ya da kod) → kod."""
+    lk = {code: code for code in STATUSES}
+    for d in I18N.values():
+        for code in STATUSES:
+            lk.setdefault(d["st_" + code].casefold(), code)
+    return lk
+
+
 def import_excel(path):
     """Beklenen düzen: Kitap | Yazar | Tür | Sayfa | ölçüt sütunları… | Skor
     (başlıklar 6 dilden herhangi birinde olabilir). Ağırlıklar ikinci sayfadan
@@ -1343,10 +1448,11 @@ def import_excel(path):
 
     ti, ai, gi, pi = find(_AL_TITLE), find(_AL_AUTHOR), find(_AL_GENRE), find(_AL_PAGES)
     si = next((i for i, h in enumerate(low) if any(h.startswith(a) for a in _AL_SCORE)), None)
+    sti = find(_AL_STATUS)
     if ti is None:
         raise ValueError("Title column not found / 'Kitap Adı'")
 
-    known = {i for i in (ti, ai, gi, pi, si) if i is not None}
+    known = {i for i in (ti, ai, gi, pi, si, sti) if i is not None}
     crit_cols = [i for i, h in enumerate(header) if h and i not in known]
     if not crit_cols:
         raise ValueError("No scoring-criteria columns found")
@@ -1384,6 +1490,11 @@ def import_excel(path):
         except (TypeError, ValueError, OverflowError):
             pages = None
         b = new_book(str(title).strip(), str(cell(ai) or "").strip(), str(cell(gi) or "").strip(), pages)
+        stv = str(cell(sti) or "").strip().casefold()
+        if stv:
+            code = _status_lookup().get(stv)
+            if code and code != "todo":
+                b["status"] = code
         for c in criteria:
             v = cell(c["col"])
             if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
@@ -1427,7 +1538,7 @@ def export_excel(data, path):
     head_fill = PatternFill("solid", fgColor=THEMES["cream"]["header_bg"].lstrip("#"))
     head_font = Font(bold=True, color="FFFFFF")
     headers = [T("col_title"), T("col_author"), T("col_genre"), T("col_pages")] + \
-              [f"{c['name']} (1-{smax})" for c in cs] + [T("col_score")]
+              [f"{c['name']} (1-{smax})" for c in cs] + [T("col_score"), T("col_status")]
     for i, h in enumerate(headers, start=1):
         cell = _xl_text(ws.cell(row=1, column=i), h)
         cell.fill, cell.font = head_fill, head_font
@@ -1461,6 +1572,7 @@ def export_excel(data, path):
         den = "+".join(f'IF({L(5+i)}{r}="",0,{ref}!$B${2+i})' for i in range(n))
         f = ws.cell(row=r, column=score_col, value=f"=IF(({den})=0,0,ROUND(({num})/({den}),2))")
         f.font = Font(bold=True)
+        _xl_text(ws.cell(row=r, column=score_col + 1), T("st_" + book_status(b)))
 
     last = len(books) + 101   # sonradan Excel'de eklenecek satırlar için pay
     sc = L(score_col)
@@ -1480,6 +1592,7 @@ def export_excel(data, path):
     for i in range(n):
         ws.column_dimensions[L(5 + i)].width = 15
     ws.column_dimensions[sc].width = 14
+    ws.column_dimensions[L(score_col + 1)].width = 16
     ws.freeze_panes = "B2"
     wb.save(path)
 
@@ -2242,7 +2355,7 @@ class NextBookApp:
                                         highlightbackground=t["border"], highlightcolor=t["border"])
         mf.pack(fill="both", expand=True, padx=14, pady=(0, 4))
         self._build_tabs()
-        self.tree = ttk.Treeview(mf, show="headings", selectmode="extended")
+        self.tree = ttk.Treeview(mf, show=("tree", "headings"), selectmode="extended")
         vs = ttk.Scrollbar(mf, orient="vertical", command=self.tree.yview)
         hs = ttk.Scrollbar(mf, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
@@ -2260,13 +2373,13 @@ class NextBookApp:
         self.tree.bind("<Shift-MouseWheel>", self._on_shift_wheel)
         self.tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.tree, e), add="+")
         self.tree.bind("<Motion>", self._on_tree_motion)
+        self.tree.bind("<Button-3>", self._on_row_menu)
+        self._build_status_icons()
 
         # alt çubuk
         bf = ttk.Frame(r, padding=(14, 4, 14, 4))
         bf.pack(fill="x")
         ttk.Button(bf, text=T("btn_settings"), command=self.open_settings).pack(side="left")
-        ttk.Button(bf, text=T("btn_sort_score"), command=self.sort_by_score).pack(side="left", padx=6)
-        ttk.Button(bf, text=T("btn_delete"), command=self.delete_selected).pack(side="left")
         ttk.Button(bf, text=T("btn_import"), command=self.import_from_excel).pack(side="left", padx=(18, 0))
         ttk.Button(bf, text=T("btn_export"), command=self.export_to_excel).pack(side="left", padx=6)
         self.status = ttk.Label(bf, text="", foreground=t["muted"])
@@ -2826,12 +2939,13 @@ class NextBookApp:
         self.finish_edit(False)
         self.tree.delete(*self.tree.get_children())
         for b in self.data["books"]:
-            self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b))
+            self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b),
+                             image=self._row_image(b))
         self.autosize_columns()
         self.update_status()
 
     def update_row(self, b):
-        self.tree.item(b["id"], values=self.row_values(b), tags=self.row_tag(b))
+        self.tree.item(b["id"], values=self.row_values(b), tags=self.row_tag(b), image=self._row_image(b))
         self.update_status()
 
     def update_status(self):
@@ -2859,10 +2973,6 @@ class NextBookApp:
         else:
             self.sort_col = cid
             self.sort_rev = cid == "score" or cid.startswith("c_")   # puanlar: yüksekten düşüğe
-        self.apply_sort()
-
-    def sort_by_score(self):
-        self.sort_col, self.sort_rev = "score", True
         self.apply_sort()
 
     def apply_sort(self):
@@ -2984,11 +3094,67 @@ class NextBookApp:
     def _append_book(self, b):
         self.data["books"].append(b)
         self.save()
-        self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b))
+        self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b),
+                         image=self._row_image(b))
         self.autosize_columns()
         self.tree.selection_set(b["id"])
         self.tree.see(b["id"])
         self.update_status()
+
+    def _build_status_icons(self):
+        """Okuyorum / okudum rozetleri ve #0 (rozet) sütunu. Tema ya da yazı boyutu değişince yeniden kurulur."""
+        t = self.theme
+        try:
+            rh = int(ttk.Style(self.root).lookup("Treeview", "rowheight") or 24)
+        except (tk.TclError, ValueError):
+            rh = 24
+        size = max(14, rh - 10)
+        self.status_icons = {
+            "reading": make_status_icon("reading", size, t["accent"], t["accent_fg"], ring=t["accent_fg"]),
+            "done": make_status_icon("done", size, t["header_bg"], t["header_fg"], ring=t["header_fg"]),
+        }
+        self.tree.heading("#0", text="")
+        self.tree.column("#0", width=size + 18, minwidth=size + 18, stretch=False, anchor="center")
+
+    def _row_image(self, b):
+        return getattr(self, "status_icons", {}).get(book_status(b), "")
+
+    def _on_row_menu(self, event):
+        """Satıra sağ tık: durum (okunacak / okuyorum / okudum) ve listeden silme. Çoklu seçimde hepsine uygulanır."""
+        iid = self.tree.identify_row(event.y)
+        if not iid or self.tree.identify_region(event.x, event.y) == "heading":
+            return
+        self.finish_edit(True)
+        if iid not in self.tree.selection():
+            self.tree.selection_set(iid)
+        ids = list(self.tree.selection())
+        states = {book_status(b) for b in map(self.book_by_id, ids) if b}
+        self._menu_var = tk.StringVar(value=next(iter(states)) if len(states) == 1 else "")
+        t = self.theme
+        m = tk.Menu(self.root, tearoff=0, bg=t["field"], fg=t["field_fg"], font=self.font_normal,
+                    activebackground=t["select_bg"], activeforeground=t["select_fg"],
+                    selectcolor=t["field_fg"])
+        for code in STATUSES:
+            m.add_radiobutton(label=T("st_" + code), variable=self._menu_var, value=code,
+                              command=lambda c=code: self.set_books_status(ids, c))
+        m.add_separator()
+        m.add_command(label=T("row_delete"), command=self.delete_selected)
+        try:
+            m.tk_popup(event.x_root, event.y_root)
+        finally:
+            m.grab_release()
+
+    def set_books_status(self, ids, state):
+        for bid in ids:
+            b = self.book_by_id(bid)
+            if not b:
+                continue
+            if state == "todo":
+                b.pop("status", None)
+            else:
+                b["status"] = state
+            self.update_row(b)
+        self.save()
 
     def delete_selected(self):
         sel = self.tree.selection()
@@ -3015,12 +3181,12 @@ class NextBookApp:
     def _ensure_col_visible(self, idx):
         """Çok ölçüt varsa düzenlenecek sütun yatay olarak görünür alana kaydırılsın."""
         ids = self.col_ids()
-        widths = [int(self.tree.column(c, "width")) for c in ids]
+        widths = [int(self.tree.column("#0", "width"))] + [int(self.tree.column(c, "width")) for c in ids]
         total = sum(widths)
         if total <= 0:
             return
-        left = sum(widths[:idx])
-        right = left + widths[idx]
+        left = sum(widths[:idx + 1])
+        right = left + widths[idx + 1]
         first, last = self.tree.xview()
         vis_left, vis_right = first * total, last * total
         if left < vis_left:
