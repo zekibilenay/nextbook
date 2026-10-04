@@ -13,7 +13,8 @@
 - 🌐 Varsayılan ölçütler seçtiğin dile göre çevrilir · Default criteria follow your language
 - 📣 **Duyuru kutusu** (başlıkta, kapatılamaz): üstüne gelince vurgulanır, tıklayınca **duyuru panosu** açılır. Duyurular 6 dilde gösterilir · **Announcement box** (in the header, always visible): hover to highlight, click to open the **announcement board**. Announcements are shown in all 6 languages
 - ℹ️ **Hakkında kartı** (sağ üstteki ⓘ) · **About card** (ⓘ, top-right)
-- 📁 Excel'den içe aktarma / Excel'e dışa aktarma · Excel import / export
+- 🗂️ **Sekmeli listeler:** istediğin kadar liste aç (en fazla 20); her listenin kendi ölçütleri ve kitapları olur. Sürükleyerek sırala, çift tıkla yeniden adlandır, sağ tıkla çoğalt / sil · **Tabbed lists:** keep up to 20 lists, each with its own criteria and books. Drag to reorder, double-click to rename, right-click to duplicate / delete
+- 📁 Excel'den içe aktarma (yeni sekme olarak, mevcut listenin üstüne yazmaz) / Excel'e dışa aktarma (açık liste) · Excel import (added as a new tab, never overwrites) / export (the open list)
 - Hesap yok, reklam yok, takip yok · No account, no ads, no tracking
 
 ## İndirme / Download
@@ -63,6 +64,10 @@ git push --tags
 GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.4 çıkınca `1.4.3`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.3` when 1.4.4 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
 
 ## Değişiklikler / Changelog
+
+### 1.5.0
+- **TR:** Sekmeli listeler: üstteki sekme çubuğundan yeni liste oluşturabilir, listeleri sürükleyerek sıralayabilir, çift tıklayarak yeniden adlandırabilir, sağ tıklayarak çoğaltabilir veya silebilirsin (orta tık = kapat). Her listenin kendi ölçütleri, puan üst sınırı ve kitapları vardır. Excel'den içe aktarılan dosya artık açık listenin üstüne yazılmaz, dosya adıyla yeni bir sekme olarak eklenir. Excel'e aktarma açık listeyi yazar ve sayfa adı liste adı olur. Yazar / tür otomatik tamamlama tüm listelerden öneri verir. Eski tek listeli veri dosyası ilk açılışta otomatik olarak ilk sekmeye taşınır ve eski dosyanın kopyası `next_book.v1-yedek.json` olarak saklanır.
+- **EN:** Tabbed lists: create new lists from the tab bar, drag to reorder, double-click to rename, right-click to duplicate or delete (middle-click closes). Each list has its own criteria, score scale and books. Excel files are no longer imported over the open list; they are added as a new tab named after the file. Excel export writes the open list and uses the list name as the sheet name. Author / genre autocomplete suggests from all lists. The old single-list data file is moved into the first tab on first launch, and a copy of the old file is kept as `next_book.v1-yedek.json`.
 
 ### 1.4.3
 _(1.4.1 ve 1.4.2 numaraları yayın sırasında atlandı. / Version numbers 1.4.1 and 1.4.2 were skipped while releasing.)_

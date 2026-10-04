@@ -35,7 +35,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.5.0"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
@@ -56,6 +56,7 @@ FONT_CHOICES = ("Segoe UI", "Calibri", "Arial", "Verdana", "Tahoma", "Trebuchet 
 
 DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
 DEFAULT_SCALE_MAX = 5
+MAX_LISTS = 20                                  # en fazla kaç sekme (liste) açılabilir
 
 
 # ============================================================================
@@ -455,6 +456,42 @@ I18N = {
         "data_recovered": "无法读取你的数据文件（可能已损坏）。已创建新的列表，旧文件已备份到：\n{path}",
 },
 }
+
+_TAB_STRINGS = {
+"tr": {"tab_new": "Yeni liste", "tab_rename": "Yeniden adlandır", "tab_duplicate": "Çoğalt",
+       "tab_close": "Listeyi sil", "ask_list_name": "Liste adı:",
+       "confirm_delete_list": "“{name}” listesi ve içindeki {n} kitap silinsin mi?",
+       "tab_limit": "En fazla {n} liste açılabilir.",
+       "import_done_tab": "“{name}” listesi eklendi: {books} kitap, {crit} ölçüt."},
+"en": {"tab_new": "New list", "tab_rename": "Rename", "tab_duplicate": "Duplicate",
+       "tab_close": "Delete list", "ask_list_name": "List name:",
+       "confirm_delete_list": "Delete the list “{name}” and its {n} books?",
+       "tab_limit": "You can have at most {n} lists.",
+       "import_done_tab": "Added list “{name}”: {books} books, {crit} criteria."},
+"ru": {"tab_new": "Новый список", "tab_rename": "Переименовать", "tab_duplicate": "Дублировать",
+       "tab_close": "Удалить список", "ask_list_name": "Название списка:",
+       "confirm_delete_list": "Удалить список «{name}» и книги в нём ({n})?",
+       "tab_limit": "Можно создать не более {n} списков.",
+       "import_done_tab": "Добавлен список «{name}»: книг — {books}, критериев — {crit}."},
+"de": {"tab_new": "Neue Liste", "tab_rename": "Umbenennen", "tab_duplicate": "Duplizieren",
+       "tab_close": "Liste löschen", "ask_list_name": "Listenname:",
+       "confirm_delete_list": "Liste „{name}“ mit {n} Büchern löschen?",
+       "tab_limit": "Es sind höchstens {n} Listen möglich.",
+       "import_done_tab": "Liste „{name}“ hinzugefügt: {books} Bücher, {crit} Kriterien."},
+"fr": {"tab_new": "Nouvelle liste", "tab_rename": "Renommer", "tab_duplicate": "Dupliquer",
+       "tab_close": "Supprimer la liste", "ask_list_name": "Nom de la liste :",
+       "confirm_delete_list": "Supprimer la liste « {name} » et ses {n} livres ?",
+       "tab_limit": "Vous pouvez avoir {n} listes au maximum.",
+       "import_done_tab": "Liste « {name} » ajoutée : {books} livres, {crit} critères."},
+"zh": {"tab_new": "新列表", "tab_rename": "重命名", "tab_duplicate": "复制",
+       "tab_close": "删除列表", "ask_list_name": "列表名称：",
+       "confirm_delete_list": "要删除列表“{name}”及其中的 {n} 本书吗？",
+       "tab_limit": "最多只能有 {n} 个列表。",
+       "import_done_tab": "已添加列表“{name}”：{books} 本书，{crit} 个评分标准。"},
+}
+for _code, _d in _TAB_STRINGS.items():
+    I18N[_code].update(_d)
+    I18N[_code]["tab_default"] = I18N[_code]["list_title"].strip()   # ilk listenin varsayılan adı
 
 _LANG = ["en"]
 
@@ -976,6 +1013,26 @@ def default_data(lang="tr"):
     }
 
 
+def new_list(name, content=None, builtin=False):
+    """Bir sekme = bir liste: kendi ölçütleri, puan üst sınırı ve kitapları var."""
+    c = content if content is not None else default_data(current_language())
+    lst = {"id": new_id(), "name": name, "scale_max": c["scale_max"],
+           "criteria": c["criteria"], "books": c["books"]}
+    if builtin:
+        lst["name_builtin"] = True   # dil değişince adı da çevrilir; elle adlandırılınca kalkar
+    return lst
+
+
+def default_store(lang="tr"):
+    names = I18N.get(lang, I18N["en"])
+    lst = new_list(names["tab_default"], default_data(lang), builtin=True)
+    return {"version": 2, "active": lst["id"], "lists": [lst]}
+
+
+def active_list(store):
+    return next((l for l in store["lists"] if l["id"] == store["active"]), store["lists"][0])
+
+
 def new_book(title, author="", genre="", pages=None, key=""):
     return {
         "id": new_id(),
@@ -1051,15 +1108,53 @@ def _validate_data(data, base):
     return data
 
 
+def _validate_store(data, lang):
+    """Depo (sürüm 2) ya da eski tek listeli dosya (sürüm 1) gelir; (depo, taşındı_mı) döner."""
+    if not isinstance(data, dict):
+        raise ValueError("root is not an object")
+    names = I18N.get(lang, I18N["en"])
+    if "lists" not in data:   # eski dosya: tek liste → ilk sekme
+        lst = _validate_data(data, default_data(lang))
+        lst = new_list(names["tab_default"], lst, builtin=True)
+        tag_builtin_criteria(lst["criteria"])
+        return {"version": 2, "active": lst["id"], "lists": [lst]}, True
+    if not isinstance(data["lists"], list):
+        raise ValueError("lists must be a list")
+    lists, seen = [], set()
+    for l in data["lists"]:
+        if not isinstance(l, dict):
+            raise ValueError("bad list")
+        _validate_data(l, default_data(lang))
+        if not isinstance(l.get("id"), str) or l["id"] in seen:
+            l["id"] = new_id()
+        seen.add(l["id"])
+        name = l.get("name")
+        l["name"] = name.strip()[:60] if isinstance(name, str) and name.strip() else names["tab_new"]
+        tag_builtin_criteria(l["criteria"])
+        lists.append(l)
+    if not lists:
+        return default_store(lang), False
+    data = {"version": 2, "active": data.get("active"), "lists": lists[:MAX_LISTS]}
+    if data["active"] not in seen:
+        data["active"] = lists[0]["id"]
+    return data, False
+
+
 def load_data(lang="tr"):
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data = _validate_data(data, default_data(lang))
-        tag_builtin_criteria(data["criteria"])
-        return data
+            raw = json.load(f)
+        store, migrated = _validate_store(raw, lang)
+        if migrated:   # sürüm 1 dosyasına dokunmadan bir kez yedeğini al
+            try:
+                backup = DATA_FILE.with_name("next_book.v1-yedek.json")
+                if not backup.exists():
+                    backup.write_bytes(DATA_FILE.read_bytes())
+            except OSError:
+                pass
+        return store
     except FileNotFoundError:
-        return default_data(lang)
+        return default_store(lang)
     except Exception:
         # Bozuk dosya: silme, zaman damgalı bir yedeğe taşı (eski yedeğin üstüne yazma) ve kullanıcıya haber ver.
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1069,7 +1164,7 @@ def load_data(lang="tr"):
         except Exception:
             backup = DATA_FILE
         LOAD_NOTICE.append(str(backup))
-        return default_data(lang)
+        return default_store(lang)
 
 
 def _atomic_write(path, obj):
@@ -1321,8 +1416,11 @@ def export_excel(data, path):
     score_col = 5 + n
     wb = Workbook()
     ws = wb.active
-    ws.title = T("xl_sheet_main")[:31]
     sheet2 = T("xl_sheet_settings")[:31]
+    main_name = re.sub(r"[\\/*?:\[\]]+", " ", str(data.get("name") or "")).strip()[:31] or T("xl_sheet_main")[:31]
+    if main_name.casefold() == sheet2.casefold():
+        main_name = main_name[:28] + " 1"
+    ws.title = main_name
     st = wb.create_sheet(sheet2)
     ref = "'" + sheet2.replace("'", "''") + "'"
 
@@ -1884,8 +1982,11 @@ class NextBookApp:
         self._setup_style()
         if self.settings.get("lang") not in I18N:
             self._first_run_language()
-        self.data = load_data(current_language())
-        if localize_criteria(self.data["criteria"]):   # varsayılan ölçütler arayüz diline uysun
+        self.store = load_data(current_language())
+        self.data = active_list(self.store)   # self.data her zaman AÇIK sekmenin listesi
+        self._drag = None
+        self.tab_items = []
+        if self._localize_all():   # varsayılan ölçütler / ilk liste adı arayüz diline uysun
             self.save()
 
         self._build_ui()
@@ -1898,6 +1999,19 @@ class NextBookApp:
             root.after(400, lambda: messagebox.showwarning(APP_NAME, T("data_recovered", path=path)))
         root.bind("<Button-1>", self._on_root_click, add="+")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _localize_all(self):
+        changed = False
+        for l in self.store["lists"]:
+            if localize_criteria(l["criteria"]):
+                changed = True
+            if l.get("name_builtin") and l["name"] != T("tab_default"):
+                l["name"] = T("tab_default")
+                changed = True
+        return changed
+
+    def all_books(self):
+        return [b for l in self.store["lists"] for b in l["books"]]
 
     # ---------------------------------------------------------------- ayarlar
     def _persist_settings(self):
@@ -2015,7 +2129,7 @@ class NextBookApp:
         if code not in I18N:
             return
         set_language(code)
-        if localize_criteria(self.data["criteria"]):
+        if self._localize_all():
             self.save()
         self._persist_settings()
         self._apply_fonts()
@@ -2091,7 +2205,7 @@ class NextBookApp:
         e2 = ttk.Entry(sf, textvariable=self.author_var, width=30)
         e1.grid(row=1, column=0, sticky="ew")
         e2.grid(row=1, column=1, sticky="ew", padx=(8, 0))
-        attach_autocomplete(e2, lambda: suggest_values(self.data["books"], "author"))
+        attach_autocomplete(e2, lambda: suggest_values(self.all_books(), "author"))
         self.search_btn = ttk.Button(sf, text=T("btn_search"), style="Accent.TButton", command=self.do_search)
         self.search_btn.grid(row=1, column=2, padx=(8, 0))
         ttk.Button(sf, text=T("btn_clear"), command=self.clear_search).grid(row=1, column=3, padx=(6, 0))
@@ -2121,15 +2235,20 @@ class NextBookApp:
         self.res_tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.res_tree, e), add="+")
 
         # ana liste
-        self.main_frame = mf = ttk.LabelFrame(r, text=T("list_title"), padding=6)
-        mf.pack(fill="both", expand=True, padx=14, pady=(4, 4))
+        self.tabbar = tk.Frame(r, bg=t["bg"], bd=0, highlightthickness=0)
+        self.tabbar.pack(fill="x", padx=14, pady=(6, 0))
+        self.tabbar.bind("<Configure>", lambda _e: self._layout_tabs())
+        self.main_frame = mf = tk.Frame(r, bg=t["bg"], bd=0, highlightthickness=1,
+                                        highlightbackground=t["border"], highlightcolor=t["border"])
+        mf.pack(fill="both", expand=True, padx=14, pady=(0, 4))
+        self._build_tabs()
         self.tree = ttk.Treeview(mf, show="headings", selectmode="extended")
         vs = ttk.Scrollbar(mf, orient="vertical", command=self.tree.yview)
         hs = ttk.Scrollbar(mf, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        vs.grid(row=0, column=1, sticky="ns")
-        hs.grid(row=1, column=0, sticky="ew")
+        self.tree.grid(row=0, column=0, sticky="nsew", padx=(6, 0), pady=(6, 0))
+        vs.grid(row=0, column=1, sticky="ns", padx=(0, 6), pady=(6, 0))
+        hs.grid(row=1, column=0, sticky="ew", padx=(6, 0), pady=(0, 6))
         mf.rowconfigure(0, weight=1)
         mf.columnconfigure(0, weight=1)
         self.tree.tag_configure("unscored", foreground=t["text"], background=t["tree_bg"], font=self.font_normal)
@@ -2155,6 +2274,217 @@ class NextBookApp:
         hint = ttk.Label(r, foreground=t["hint"], padding=(14, 0, 14, 8), text=T("hint"), justify="left")
         hint.pack(fill="x")
         hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(200, e.width - 28)))
+
+    # ---------------------------------------------------------------- sekmeler (listeler)
+    def _tab_h(self):
+        return self.font_head.metrics("linespace") + 14
+
+    def _build_tabs(self):
+        """Her liste için bir sekme + sonda “+” düğmesi. Ekleme/silme/sıralama/ad değişince yeniden kurulur."""
+        for w in self.tabbar.winfo_children():
+            w.destroy()
+        self.tab_items = []
+        for lst in self.store["lists"]:
+            fr = tk.Frame(self.tabbar, bd=0, highlightthickness=1, cursor="hand2")
+            fr.pack_propagate(False)
+            nm = tk.Label(fr, bd=0, anchor="w", font=self.font_head, cursor="hand2")
+            nm.pack(side="left", fill="both", expand=True, padx=(10, 0))
+            xb = None
+            if len(self.store["lists"]) > 1:
+                xb = tk.Label(fr, text="×", bd=0, font=self.font_head, cursor="hand2", padx=7)
+                xb.pack(side="right", fill="y")
+                xb.bind("<Button-1>", lambda _e, l=lst: self.delete_list(l))
+                xb.bind("<Enter>", lambda _e, w=xb: w.configure(fg=self.theme["accent"]))
+                xb.bind("<Leave>", lambda _e, l=lst: self._style_tabs())
+            for w in (fr, nm):
+                w.bind("<ButtonPress-1>", lambda e, l=lst: self._tab_press(l, e))
+                w.bind("<B1-Motion>", self._tab_motion)
+                w.bind("<ButtonRelease-1>", self._tab_release)
+                w.bind("<Double-Button-1>", lambda _e, l=lst: self.rename_list(l))
+                w.bind("<Button-3>", lambda e, l=lst: self._tab_menu(l, e))
+                w.bind("<Button-2>", lambda _e, l=lst: self.delete_list(l))
+                w.bind("<Enter>", lambda _e, l=lst: self._style_tabs(hover=l))
+                w.bind("<Leave>", lambda _e: self._style_tabs())
+            self.tab_items.append({"lst": lst, "fr": fr, "nm": nm, "x": xb, "pos": (0, 0)})
+        plus = tk.Label(self.tabbar, text="+", bd=0, font=self.font_head, cursor="hand2")
+        plus.bind("<Button-1>", lambda _e: self.add_list())
+        plus.bind("<Enter>", lambda _e: plus.configure(fg=self.theme["accent"]))
+        plus.bind("<Leave>", lambda _e: plus.configure(fg=self.theme["text"]))
+        self.tab_plus = plus
+        self._layout_tabs()
+        self._style_tabs()
+
+    def _layout_tabs(self):
+        items = getattr(self, "tab_items", None)
+        if not items:
+            return
+        avail = self.tabbar.winfo_width()
+        h, gap = self._tab_h(), 3
+        self.tabbar.configure(height=h + 1)
+        if avail <= 1:
+            return
+        plus_w = h + 2
+        nat = [min(self.font_head.measure(it["lst"]["name"]) + (50 if it["x"] else 30), 260) for it in items]
+        room = max(70, (avail - plus_w - gap * (len(items) + 1)) // len(items))
+        x = 0
+        for it, nw in zip(items, nat):
+            w = min(nw, room)
+            it["fr"].place(x=x, y=0, width=w, height=h)
+            it["pos"] = (x, w)
+            it["nm"].configure(text=fit_text(self.font_head, it["lst"]["name"], w - (36 if it["x"] else 18)))
+            x += w + gap
+        self.tab_plus.place(x=x, y=0, width=plus_w, height=h)
+
+    def _style_tabs(self, hover=None):
+        t = self.theme
+        for it in getattr(self, "tab_items", []):
+            if it["lst"] is self.data:
+                bg, fg = t["header_bg"], t["header_fg"]
+            elif it["lst"] is hover:
+                bg, fg = t["button_active"], t["text"]
+            else:
+                bg, fg = t["button"], t["text"]
+            it["fr"].configure(bg=bg, highlightbackground=t["border"], highlightcolor=t["border"])
+            it["nm"].configure(bg=bg, fg=fg)
+            if it["x"] is not None:
+                it["x"].configure(bg=bg, fg=fg)
+        if getattr(self, "tab_plus", None) is not None:
+            self.tab_plus.configure(bg=t["bg"], fg=t["text"])
+
+    def _tab_press(self, lst, e):
+        self._drag = {"lst": lst, "x0": e.x_root, "moved": False}
+
+    def _tab_motion(self, e):
+        d = self._drag
+        if not d:
+            return
+        if abs(e.x_root - d["x0"]) > 6:
+            d["moved"] = True
+        if d["moved"]:   # sekme fareyi izlesin
+            it = next(i for i in self.tab_items if i["lst"] is d["lst"])
+            x0, w = it["pos"]
+            nx = max(0, min(self.tabbar.winfo_width() - w, x0 + e.x_root - d["x0"]))
+            it["fr"].place(x=nx)
+            it["fr"].lift()
+
+    def _tab_release(self, e):
+        d, self._drag = self._drag, None
+        if not d:
+            return
+        if not d["moved"]:
+            self.switch_list(d["lst"])
+            return
+        lists = self.store["lists"]
+        cur = lists.index(d["lst"])
+        it = self.tab_items[cur]
+        center = it["pos"][0] + it["pos"][1] / 2 + (e.x_root - d["x0"])
+        target = sum(1 for j, o in enumerate(self.tab_items)
+                     if j != cur and o["pos"][0] + o["pos"][1] / 2 < center)
+        if target != cur:
+            lists.insert(target, lists.pop(cur))
+            self.save()
+        self.root.after_idle(self._build_tabs)
+
+    def _tab_menu(self, lst, e):
+        t = self.theme
+        m = tk.Menu(self.root, tearoff=0, bg=t["field"], fg=t["field_fg"], font=self.font_normal,
+                    activebackground=t["select_bg"], activeforeground=t["select_fg"])
+        m.add_command(label=T("tab_new"), command=self.add_list)
+        m.add_command(label=T("tab_rename"), command=lambda: self.rename_list(lst))
+        m.add_command(label=T("tab_duplicate"), command=lambda: self.duplicate_list(lst))
+        m.add_separator()
+        m.add_command(label=T("tab_close"), command=lambda: self.delete_list(lst),
+                      state="normal" if len(self.store["lists"]) > 1 else "disabled")
+        try:
+            m.tk_popup(e.x_root, e.y_root)
+        finally:
+            m.grab_release()
+
+    def unique_list_name(self, base, ignore=None):
+        base = (base or "").strip()[:56] or T("tab_new")
+        taken = {l["name"].casefold() for l in self.store["lists"] if l is not ignore}
+        name, n = base, 2
+        while name.casefold() in taken:
+            name = f"{base} ({n})"
+            n += 1
+        return name
+
+    def _activate(self, lst):
+        """Açık sekmeyi değiştir: tablo, sütunlar ve arama sonuçlarındaki ✓ işaretleri bu listeye göre yenilenir."""
+        self.finish_edit(True)
+        self.data = lst
+        self.store["active"] = lst["id"]
+        self.sort_col, self.sort_rev = None, False
+        self._hover_cid = None
+        self.save()
+        self._style_tabs()
+        self.rebuild_columns()
+        self.refresh_table()
+        if self.results:
+            self.show_results(self.results)
+
+    def switch_list(self, lst):
+        if lst is not self.data:
+            self._activate(lst)
+
+    def _limit_reached(self):
+        if len(self.store["lists"]) >= MAX_LISTS:
+            self.root.bell()
+            self.set_status(T("tab_limit", n=MAX_LISTS))
+            return True
+        return False
+
+    def add_list(self):
+        if self._limit_reached():
+            return
+        self.finish_edit(True)
+        name = simpledialog.askstring(APP_NAME, T("ask_list_name"), parent=self.root,
+                                      initialvalue=self.unique_list_name(T("tab_new")))
+        if not name or not name.strip():
+            return
+        lst = new_list(self.unique_list_name(name), default_data(current_language()))
+        self.store["lists"].append(lst)
+        self._build_tabs()
+        self._activate(lst)
+
+    def rename_list(self, lst):
+        self.finish_edit(True)
+        name = simpledialog.askstring(APP_NAME, T("ask_list_name"), parent=self.root, initialvalue=lst["name"])
+        if not name or not name.strip() or name.strip() == lst["name"]:
+            return
+        lst["name"] = self.unique_list_name(name, ignore=lst)
+        lst.pop("name_builtin", None)
+        self.save()
+        self._build_tabs()
+
+    def duplicate_list(self, lst):
+        if self._limit_reached():
+            return
+        self.finish_edit(True)
+        import copy
+        c = copy.deepcopy(lst)
+        c["id"] = new_id()
+        c["name"] = self.unique_list_name(lst["name"])
+        c.pop("name_builtin", None)
+        self.store["lists"].insert(self.store["lists"].index(lst) + 1, c)
+        self._build_tabs()
+        self._activate(c)
+
+    def delete_list(self, lst):
+        lists = self.store["lists"]
+        if len(lists) <= 1:
+            return
+        self.finish_edit(False)
+        if lst["books"] and not messagebox.askyesno(
+                APP_NAME, T("confirm_delete_list", name=lst["name"], n=len(lst["books"]))):
+            return
+        idx = lists.index(lst)
+        lists.remove(lst)
+        self._build_tabs()
+        if lst is self.data:
+            self._activate(lists[max(0, idx - 1)])
+        else:
+            self.save()
 
     # ---------------------------------------------------------------- tema noktaları
     def _build_swatches(self, parent):
@@ -2518,7 +2848,7 @@ class NextBookApp:
 
     def save(self):
         try:
-            save_data(self.data)
+            save_data(self.store)
         except OSError as e:
             messagebox.showerror(APP_NAME, T("save_failed", err=e))
 
@@ -2610,7 +2940,7 @@ class NextBookApp:
             self.res_tree.insert("", "end", iid=str(i), tags=("added",) if added else (),
                                  values=(("✓ " if added else "") + r["title"], r["author"], r["genre"],
                                          r["pages"] or "", r["year"]))
-        self.res_frame.pack(fill="x", padx=14, pady=(8, 4), before=self.main_frame)
+        self.res_frame.pack(fill="x", padx=14, pady=(8, 4), before=self.tabbar)   # sekmelerin üstünde
         self.set_status(T("results_found", n=len(results)))
 
     def clear_search(self):
@@ -2726,7 +3056,7 @@ class NextBookApp:
         entry.place(x=x, y=y, width=w, height=h)
         entry.focus_set()
         if cid in ("author", "genre"):   # daha önce yazılanları öner
-            vals = suggest_values(self.data["books"], cid)
+            vals = suggest_values(self.all_books(), cid)
             attach_autocomplete(entry, lambda v=vals: v)
         self.edit = {"iid": iid, "idx": idx, "cid": cid, "entry": entry}
         entry.bind("<Return>", lambda _e: self._commit_and_move(1, 0))
@@ -2826,31 +3156,32 @@ class NextBookApp:
 
     # ---------------------------------------------------------------- Excel
     def import_from_excel(self):
+        """Excel dosyası mevcut listenin üstüne yazılmaz; yeni bir sekme olarak eklenir."""
         if not _require_openpyxl():
+            return
+        if self._limit_reached():
             return
         path = filedialog.askopenfilename(title=T("pick_excel"),
                                           filetypes=[("Excel", "*.xlsx *.xlsm"), ("*", "*.*")])
         if not path:
-            return
-        if self.data["books"] and not messagebox.askyesno(APP_NAME, T("confirm_import")):
             return
         try:
             new = import_excel(path)
         except Exception as e:
             messagebox.showerror(APP_NAME, T("import_failed", err=e))
             return
-        self.data = new
-        self.sort_col = None
-        self.save()
-        self.rebuild_columns()
-        self.refresh_table()
-        messagebox.showinfo(APP_NAME, T("import_done", books=len(new["books"]), crit=len(new["criteria"])))
+        lst = new_list(self.unique_list_name(Path(path).stem), new)
+        self.store["lists"].append(lst)
+        self._build_tabs()
+        self._activate(lst)
+        messagebox.showinfo(APP_NAME, T("import_done_tab", name=lst["name"],
+                                        books=len(lst["books"]), crit=len(lst["criteria"])))
 
     def export_to_excel(self):
         if not _require_openpyxl():
             return
         path = filedialog.asksaveasfilename(title=T("save_excel"), defaultextension=".xlsx",
-                                            initialfile="Next_Book.xlsx", filetypes=[("Excel", "*.xlsx")])
+                                            initialfile=(re.sub(r'[\\/:*?"<>|]+', "_", self.data["name"]).strip() or "Next_Book") + ".xlsx", filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
         try:
