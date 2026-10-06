@@ -38,7 +38,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
@@ -59,7 +59,8 @@ FONT_CHOICES = ("Segoe UI", "Calibri", "Arial", "Verdana", "Tahoma", "Trebuchet 
 
 DEFAULT_WEIGHTS = [0.30, 0.30, 0.15, 0.10, 0.15]
 DEFAULT_SCALE_MAX = 10
-STATUSES = ("todo", "reading", "done")           # okunacak · okuyorum · okudum
+STATUSES = ("todo", "reading", "paused", "done")   # okunacak · okuyorum · yarım bıraktım · okudum
+NEW_IID = "__new__"                              # tablonun en altındaki hep boş satır
 MAX_LISTS = 20                                  # en fazla kaç sekme (liste) açılabilir
 
 
@@ -132,7 +133,6 @@ I18N = {
  "btn_close": "Kapat",
  "about_hello": "Merhaba! Ben Zeki. Next Book'u, okuyacağın kitapları kendi ölçütlerine göre puanlayıp sana doğru okuma sırasını göstermesi için geliştiriyorum.",
  "about_privacy": "Verilerin yalnızca bilgisayarında kalır; hesap gerektirmez. İnternet yalnızca kitap araması (Open Library) ve duyurular için kullanılır.",
- "about_source": "Kaynak kodu (GitHub)",
  "about_data": "Veri klasörü",
         "data_recovered": "Veri dosyan okunamadı (bozulmuş olabilir). Yeni bir liste ile başlandı; eski dosya şuraya yedeklendi:\n{path}",
 },
@@ -197,7 +197,6 @@ I18N = {
  "btn_close": "Close",
  "about_hello": "Hi! I'm Zeki. I'm building Next Book to help you score the books you want to read by your own criteria and see what to read next.",
  "about_privacy": "Your data stays on your computer and no account is needed. The internet is used only for book search (Open Library) and announcements.",
- "about_source": "Source code (GitHub)",
  "about_data": "Data folder",
         "data_recovered": "Your data file could not be read (it may be corrupted). A new list was started; the old file was backed up to:\n{path}",
 },
@@ -262,7 +261,6 @@ I18N = {
  "btn_close": "Закрыть",
  "about_hello": "Привет! Я Зеки. Я создаю Next Book, чтобы вы могли оценивать книги, которые хотите прочитать, по собственным критериям и видеть, что читать дальше.",
  "about_privacy": "Ваши данные остаются на вашем компьютере, учётная запись не нужна. Интернет используется только для поиска книг (Open Library) и объявлений.",
- "about_source": "Исходный код (GitHub)",
  "about_data": "Папка данных",
         "data_recovered": "Не удалось прочитать файл данных (возможно, он повреждён). Начат новый список; старый файл сохранён здесь:\n{path}",
 },
@@ -327,7 +325,6 @@ I18N = {
  "btn_close": "Schließen",
  "about_hello": "Hallo! Ich bin Zeki. Ich entwickle Next Book, damit du die Bücher, die du lesen möchtest, nach eigenen Kriterien bewerten kannst und siehst, was als Nächstes dran ist.",
  "about_privacy": "Deine Daten bleiben auf deinem Computer, ein Konto ist nicht nötig. Das Internet wird nur für die Buchsuche (Open Library) und für Ankündigungen genutzt.",
- "about_source": "Quellcode (GitHub)",
  "about_data": "Datenordner",
         "data_recovered": "Deine Datendatei konnte nicht gelesen werden (möglicherweise beschädigt). Es wurde eine neue Liste angelegt; die alte Datei wurde hier gesichert:\n{path}",
 },
@@ -392,7 +389,6 @@ I18N = {
  "btn_close": "Fermer",
  "about_hello": "Bonjour ! Moi, c'est Zeki. Je développe Next Book pour vous aider à noter les livres que vous voulez lire selon vos propres critères et à savoir quoi lire ensuite.",
  "about_privacy": "Vos données restent sur votre ordinateur, aucun compte n'est nécessaire. Internet n'est utilisé que pour la recherche de livres (Open Library) et les annonces.",
- "about_source": "Code source (GitHub)",
  "about_data": "Dossier de données",
         "data_recovered": "Votre fichier de données est illisible (peut-être corrompu). Une nouvelle liste a été créée ; l'ancien fichier a été sauvegardé ici :\n{path}",
 },
@@ -455,7 +451,6 @@ I18N = {
  "btn_close": "关闭",
  "about_hello": "你好！我是 Zeki。我开发 Next Book，是为了让你按自己的标准给想读的书打分，并清楚下一本该读什么。",
  "about_privacy": "你的数据只保存在你的电脑上，无需账号。网络仅用于图书搜索（Open Library）和公告。",
- "about_source": "源代码 (GitHub)",
  "about_data": "数据文件夹",
         "data_recovered": "无法读取你的数据文件（可能已损坏）。已创建新的列表，旧文件已备份到：\n{path}",
 },
@@ -514,6 +509,23 @@ _ROW_STRINGS = {
 for _code, _d in _ROW_STRINGS.items():
     I18N[_code].update(_d)
 
+_NEW_STRINGS = {
+"tr": {"st_paused": "Yarım bıraktım", "btn_grid": "Izgara",
+       "hint_blank": "Alttaki boş satıra yazarak kitap ekle"},
+"en": {"st_paused": "Paused", "btn_grid": "Grid",
+       "hint_blank": "Type in the empty bottom row to add a book"},
+"ru": {"st_paused": "Приостановлено", "btn_grid": "Сетка",
+       "hint_blank": "Чтобы добавить книгу, пишите в пустой нижней строке"},
+"de": {"st_paused": "Pausiert", "btn_grid": "Gitter",
+       "hint_blank": "Neue Bücher in der leeren Zeile unten eintragen"},
+"fr": {"st_paused": "En pause", "btn_grid": "Grille",
+       "hint_blank": "Écrivez dans la ligne vide du bas pour ajouter un livre"},
+"zh": {"st_paused": "已暂停", "btn_grid": "网格",
+       "hint_blank": "在底部空行中输入即可添加书籍"},
+}
+for _code, _d in _NEW_STRINGS.items():
+    I18N[_code].update(_d)
+
 _LANG = ["en"]
 
 
@@ -552,7 +564,9 @@ _AL_SCORE = _aliases("col_score", ("öncelik skoru", "skor", "priority score", "
 # ============================================================================
 
 THEMES = {
+    # ---- aydınlık temalar
     "cream": dict(   # kütüphane katalog çekmecesi (varsayılan)
+        dark=False, swatch="#1F3A5F",
         bg="#F5F0E6", text="#2B2B2B", muted="#6B665A", hint="#8A8472", border="#D5CBB2",
         header_bg="#1F3A5F", header_fg="#FFFFFF", header_active="#2B4F80", title_fg="#1F3A5F",
         accent="#C8962E", accent_active="#DDAA3C", accent_fg="#1B1B1B",
@@ -561,6 +575,7 @@ THEMES = {
         scored_fg="#143020", select_bg="#E7B94F", select_fg="#000000", label_frame="#6B5A33",
         ramp=["#EAF2E6", "#D6E7D0", "#C0DAB8", "#A8CC9F", "#8FBC85"]),
     "moss": dict(
+        dark=False, swatch="#35553B",
         bg="#EDF1E8", text="#25301F", muted="#5E6B55", hint="#7F8B76", border="#C9D3BD",
         header_bg="#35553B", header_fg="#FFFFFF", header_active="#46704E", title_fg="#35553B",
         accent="#C9A227", accent_active="#DDB63A", accent_fg="#1F1A05",
@@ -568,31 +583,8 @@ THEMES = {
         field="#FFFFFF", field_fg="#25301F", tree_bg="#FFFFFF", unscored_fg="#9BA793",
         scored_fg="#25330F", select_bg="#E7B94F", select_fg="#000000", label_frame="#4B6B3F",
         ramp=["#EEF3E2", "#E0EBC8", "#CFE0A8", "#BBD28A", "#A4C26B"]),
-    "night": dict(
-        bg="#171C26", text="#E4E7EC", muted="#98A2B3", hint="#7B8598", border="#303A4C",
-        header_bg="#0E131B", header_fg="#E4E7EC", header_active="#1D2736", title_fg="#F2C14E",
-        accent="#E0A93B", accent_active="#F0BC55", accent_fg="#17120A",
-        button="#263043", button_active="#31405A", button_disabled="#1F2736",
-        field="#202838", field_fg="#E4E7EC", tree_bg="#1D2431", unscored_fg="#66728A",
-        scored_fg="#EAF5EA", select_bg="#B9852A", select_fg="#FFFFFF", label_frame="#D6B25E",
-        ramp=["#24362F", "#2A4637", "#315640", "#38674A", "#407955"]),
-    "lavender": dict(
-        bg="#F2EFF8", text="#2A2540", muted="#6E6888", hint="#8C86A5", border="#CFC6E4",
-        header_bg="#4B3F7A", header_fg="#FFFFFF", header_active="#5E50A0", title_fg="#4B3F7A",
-        accent="#8E6FD8", accent_active="#A084E4", accent_fg="#FFFFFF",
-        button="#E4DDF2", button_active="#D8CEEB", button_disabled="#EDE8F6",
-        field="#FFFFFF", field_fg="#2A2540", tree_bg="#FFFFFF", unscored_fg="#A19CB3",
-        scored_fg="#2A1F4F", select_bg="#EDC25A", select_fg="#000000", label_frame="#5B4A8F",
-        ramp=["#F0ECFA", "#E2DAF5", "#D1C5EE", "#BFAEE6", "#AA94DC"]),
-    "sand": dict(
-        bg="#F4ECE3", text="#33261B", muted="#6F5F50", hint="#9A8B7B", border="#D8C7B1",
-        header_bg="#5B3F2C", header_fg="#FFFFFF", header_active="#74523B", title_fg="#5B3F2C",
-        accent="#C0702A", accent_active="#D4843B", accent_fg="#FFFFFF",
-        button="#E8DAC8", button_active="#DDCBB3", button_disabled="#EFE5D8",
-        field="#FFFFFF", field_fg="#33261B", tree_bg="#FFFDF9", unscored_fg="#A89C8E",
-        scored_fg="#3A2414", select_bg="#8DB4D8", select_fg="#000000", label_frame="#6B4A33",
-        ramp=["#F7E9D6", "#F0D9BA", "#E8C79B", "#DFB27B", "#D49C5C"]),
     "ocean": dict(
+        dark=False, swatch="#14506B",
         bg="#E9F1F6", text="#16303F", muted="#587080", hint="#7A93A3", border="#BCD3E0",
         header_bg="#14506B", header_fg="#FFFFFF", header_active="#1E6A8A", title_fg="#14506B",
         accent="#E08A2E", accent_active="#EE9C45", accent_fg="#1B1B1B",
@@ -600,6 +592,34 @@ THEMES = {
         field="#FFFFFF", field_fg="#16303F", tree_bg="#FFFFFF", unscored_fg="#9AA9B5",
         scored_fg="#0E2F44", select_bg="#F2C14E", select_fg="#000000", label_frame="#2D6580",
         ramp=["#E6F1F9", "#D0E5F3", "#B8D8EE", "#9CC8E6", "#7DB4DA"]),
+    # ---- karanlık temalar
+    "night": dict(
+        dark=True, swatch="#3B4B6B",
+        bg="#171C26", text="#E4E7EC", muted="#98A2B3", hint="#7B8598", border="#303A4C",
+        header_bg="#0E131B", header_fg="#E4E7EC", header_active="#1D2736", title_fg="#F2C14E",
+        accent="#E0A93B", accent_active="#F0BC55", accent_fg="#17120A",
+        button="#263043", button_active="#31405A", button_disabled="#1F2736",
+        field="#202838", field_fg="#E4E7EC", tree_bg="#1D2431", unscored_fg="#66728A",
+        scored_fg="#EAF5EA", select_bg="#B9852A", select_fg="#FFFFFF", label_frame="#D6B25E",
+        ramp=["#24362F", "#2A4637", "#315640", "#38674A", "#407955"]),
+    "plum": dict(
+        dark=True, swatch="#6A4FB0",
+        bg="#1D1828", text="#E9E4F3", muted="#A79FC0", hint="#8B83A6", border="#383050",
+        header_bg="#120E1B", header_fg="#E9E4F3", header_active="#262037", title_fg="#C8B3F5",
+        accent="#A98BEA", accent_active="#BBA2F2", accent_fg="#150F26",
+        button="#2B2440", button_active="#382F55", button_disabled="#231D33",
+        field="#251F36", field_fg="#E9E4F3", tree_bg="#211B30", unscored_fg="#6F6890",
+        scored_fg="#F4F0FC", select_bg="#7B5CC4", select_fg="#FFFFFF", label_frame="#C0A9F0",
+        ramp=["#2D2545", "#382C58", "#44366C", "#514180", "#5F4E96"]),
+    "ember": dict(
+        dark=True, swatch="#B8662A",
+        bg="#221A15", text="#F0E6DC", muted="#B3A092", hint="#8F7D70", border="#43342B",
+        header_bg="#150F0B", header_fg="#F0E6DC", header_active="#2E221A", title_fg="#F0B070",
+        accent="#E08A3C", accent_active="#EE9D55", accent_fg="#1C1008",
+        button="#33261E", button_active="#443328", button_disabled="#2A2019",
+        field="#2B2018", field_fg="#F0E6DC", tree_bg="#271D17", unscored_fg="#7C6B5E",
+        scored_fg="#FFF4E8", select_bg="#4F86A8", select_fg="#FFFFFF", label_frame="#E0A468",
+        ramp=["#3A2A1C", "#4A3320", "#5B3D24", "#6D4929", "#80552E"]),
 }
 DEFAULT_THEME = "cream"
 
@@ -642,6 +662,7 @@ def _mix(h1, h2, t):
     return "#%02X%02X%02X" % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
+
 # ============================================================================
 # BAYRAKLAR (resim dosyası yok: piksel piksel çizilir, sonra PhotoImage olur)
 # ============================================================================
@@ -655,6 +676,11 @@ def _rgb(h):
         c = (int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16))
         _RGB_CACHE[h] = c
     return c
+
+
+# ızgara çizgisi rengi (_rgb tanımından sonra hesaplanır)
+for _t in THEMES.values():   # ızgara çizgisi: satır zeminine göre çok hafif bir ton farkı
+    _t["grid"] = _mix(_t["tree_bg"], "#FFFFFF" if _t["dark"] else _t["text"], 0.16 if _t["dark"] else 0.14)
 
 
 def _star_points(cx, cy, R, rot_deg):
@@ -856,7 +882,7 @@ def _png_chunk(tag, data):
 
 
 def status_icon_png(kind, size, fill, glyph, ring=None):
-    """Yuvarlak rozet (kind: 'reading' = dolu oynat üçgeni, 'done' = onay işareti) → RGBA PNG baytları.
+    """Yuvarlak rozet (kind: 'reading' = oynat üçgeni, 'paused' = duraklat çubukları, 'done' = onay işareti) → RGBA PNG baytları.
     4x4 alt örnekleme: kenar yumuşak, zemin saydam; hangi renkli satırın üstünde olursa olsun uyar."""
     S = float(size)
     c, R = S / 2.0, S / 2.0 - 0.5
@@ -868,6 +894,8 @@ def status_icon_png(kind, size, fill, glyph, ring=None):
     def in_glyph(x, y):
         if kind == "reading":
             return _in_poly(x, y, tri)
+        if kind == "paused":   # ⏸ iki dikey çubuk
+            return (S * 0.32 <= x <= S * 0.45 or S * 0.55 <= x <= S * 0.68) and S * 0.28 <= y <= S * 0.72
         return any(_seg_dist(x, y, a, b) <= hw for a, b in chk)
 
     cf, cg = _rgb(fill), _rgb(glyph)
@@ -1136,7 +1164,7 @@ def new_book(title, author="", genre="", pages=None, key=""):
 def book_status(b):
     """'todo' (okunacak) · 'reading' (okuyorum) · 'done' (okudum). Alan yoksa okunacak sayılır."""
     s = b.get("status")
-    return s if s in ("reading", "done") else "todo"
+    return s if s in ("reading", "paused", "done") else "todo"
 
 
 def compute_score(book, criteria):
@@ -1197,7 +1225,7 @@ def _validate_data(data, base):
         b.setdefault("genre", "")
         b.setdefault("pages", None)
         b.setdefault("key", "")
-        if b.get("status") not in ("reading", "done"):
+        if b.get("status") not in ("reading", "paused", "done"):
             b.pop("status", None)
         if not isinstance(b.get("scores"), dict):
             b["scores"] = {}
@@ -1479,7 +1507,11 @@ def import_excel(path):
     for row in ws.iter_rows(min_row=2, values_only=True):
         title = row[ti] if ti < len(row) else None
         if not title or not str(title).strip():
-            continue
+            # başlığı boş ama başka sütunu dolu satır (tablonun boş satırından eklenmiş olabilir) kaybolmasın
+            others = [i for i in (ai, gi, pi, *crit_cols) if i is not None and i < len(row)]
+            if not any(row[i] not in (None, "") for i in others):
+                continue
+            title = ""
 
         def cell(idx):
             return row[idx] if idx is not None and idx < len(row) else None
@@ -1670,6 +1702,85 @@ class LanguageDialog(tk.Toplevel):
 # HAKKINDA KARTI
 # ============================================================================
 
+class ManualBookDialog(tk.Toplevel):
+    """Elle ekleme: kitap adı, yazar, tür, sayfa sayısı. Yalnızca kitap adı zorunlu."""
+
+    KEYS = ("title", "author", "genre", "pages")
+
+    def __init__(self, app):
+        super().__init__(app.root)
+        t = app.theme
+        self.app, self.result = app, None
+        self.title(T("btn_manual").lstrip("+ ").strip())
+        self.configure(bg=t["bg"], padx=22, pady=18)
+        self.transient(app.root)
+        self.resizable(False, False)
+        try:
+            self.iconbitmap(resource_path("next_book.ico"))
+        except Exception:
+            pass
+        body = ttk.Frame(self)
+        body.pack(fill="x")
+        body.columnconfigure(0, weight=1)
+        self.entries = {}
+        for r, key in enumerate(self.KEYS):
+            ttk.Label(body, text=T("col_" + key)).grid(row=r * 2, column=0, sticky="w", pady=(0 if r == 0 else 10, 2))
+            e = ttk.Entry(body, width=14 if key == "pages" else 46)
+            e.grid(row=r * 2 + 1, column=0, sticky="w" if key == "pages" else "ew")
+            e.bind("<Return>", lambda _e, k=key: self._enter(k))
+            if key in ("author", "genre"):
+                attach_autocomplete(e, lambda k=key: suggest_values(app.all_books(), k))
+            self.entries[key] = e
+        self.msg = ttk.Label(self, text="", foreground="#FF8A80" if t["dark"] else "#B3261E")
+        self.msg.pack(fill="x", pady=(8, 0))
+        btns = ttk.Frame(self)
+        btns.pack(fill="x", pady=(10, 0))
+        ttk.Button(btns, text=T("btn_add_to_list"), style="Accent.TButton", command=self.submit).pack(side="right")
+        ttk.Button(btns, text=T("btn_cancel"), command=self.destroy).pack(side="right", padx=(0, 8))
+        self.bind("<Escape>", lambda _e: self.destroy())
+        try:
+            self.update_idletasks()
+            center_on_parent(self, app.root, self.winfo_reqwidth(), self.winfo_reqheight())
+        except tk.TclError:
+            pass
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.entries["title"].focus_set()
+
+    def _enter(self, key):
+        e = self.entries[key]
+        if e.selection_present():      # otomatik tamamlama önerisi varsa önce onu kabul et
+            e.icursor("end")
+            e.selection_clear()
+            return "break"
+        self.submit()
+        return "break"
+
+    def submit(self):
+        title = self.entries["title"].get().strip()
+        if not title:
+            self.bell()
+            self.entries["title"].focus_set()
+            return
+        raw = self.entries["pages"].get().strip()
+        pages = None
+        if raw:
+            try:
+                pages = int(float(raw.replace(",", ".")))
+                if pages < 0:
+                    raise ValueError
+            except (ValueError, OverflowError):
+                self.bell()
+                self.msg.config(text=T("bad_pages"))
+                self.entries["pages"].focus_set()
+                return
+        self.result = {"title": title, "author": self.entries["author"].get().strip(),
+                       "genre": self.entries["genre"].get().strip(), "pages": pages}
+        self.destroy()
+
+
 class AboutDialog(tk.Toplevel):
     """Hakkında kartı: tema renklerine uyar, 6 dilde."""
 
@@ -1699,10 +1810,6 @@ class AboutDialog(tk.Toplevel):
             tk.Label(self, text=T(key), font=app.font_normal, bg=t["bg"], fg=t["text"],
                      justify="left", anchor="w", wraplength=self.WIDTH).pack(fill="x", pady=(0, 10))
 
-        link = tk.Label(self, text="↗  " + T("about_source"), font=(fam, size, "bold underline"),
-                        bg=t["bg"], fg=t["title_fg"], cursor="hand2", anchor="w")
-        link.pack(fill="x", pady=(6, 4))
-        link.bind("<Button-1>", lambda _e: webbrowser.open(REPO_URL))
         tk.Label(self, text=f"{T('about_data')}: {DATA_DIR}", font=(fam, small), bg=t["bg"], fg=t["muted"],
                  justify="left", anchor="w", wraplength=self.WIDTH).pack(fill="x", pady=(4, 0))
 
@@ -2066,6 +2173,10 @@ class NextBookApp:
             self.font_size = 10
         set_language(self.settings.get("lang") if self.settings.get("lang") in I18N else "en")
 
+        self.grid_on = bool(self.settings.get("grid", True))   # ızgara çizgileri açık mı
+        self._grid_job = None
+        self._hlines, self._vlines = [], []
+        self._created = None
         self.flag_cache = {}
         self.icon_cache = {}
         self.results = []
@@ -2088,8 +2199,15 @@ class NextBookApp:
             root.iconbitmap(resource_path("next_book.ico"))
         except Exception:
             pass   # simge yoksa ya da platform .ico desteklemiyorsa sorun değil
-        root.geometry("1220x760")
+        root.geometry("1220x760")      # pencere küçültülürse dönülecek boyut
         root.minsize(900, 560)
+        try:                            # tam ekran boyutunda aç
+            root.state("zoomed")
+        except tk.TclError:
+            try:
+                root.attributes("-zoomed", True)
+            except tk.TclError:
+                pass
 
         self._make_fonts()
         self._setup_style()
@@ -2129,7 +2247,8 @@ class NextBookApp:
     # ---------------------------------------------------------------- ayarlar
     def _persist_settings(self):
         self.settings.update({"lang": current_language(), "theme": self.theme_name,
-                              "font_family": self.font_family, "font_size": self.font_size})
+                              "font_family": self.font_family, "font_size": self.font_size,
+                              "grid": self.grid_on})
         save_settings(self.settings)
 
     def _first_run_language(self):
@@ -2199,6 +2318,10 @@ class NextBookApp:
                         bordercolor=t["border"], padding=(10, 4))
         style.map("TButton", background=[("active", t["button_active"]), ("disabled", t["button_disabled"])])
         style.configure("Tool.TButton", padding=(8, 3))
+        style.configure("Grid.Toolbutton", background=t["button"], foreground=t["text"],
+                        bordercolor=t["border"], padding=(10, 4))
+        style.map("Grid.Toolbutton", background=[("selected", t["accent"]), ("active", t["button_active"])],
+                  foreground=[("selected", t["accent_fg"])])
         style.configure("Accent.TButton", background=t["accent"], foreground=t["accent_fg"], padding=(16, 4))
         style.map("Accent.TButton", background=[("active", t["accent_active"]), ("disabled", t["button_disabled"])])
         style.configure("TEntry", fieldbackground=t["field"], foreground=t["field_fg"],
@@ -2261,6 +2384,7 @@ class NextBookApp:
         for w in list(self.root.winfo_children()):
             w.destroy()
         self._hover_cid = None
+        self._grid_job = None
         self._build_ui()
         self.rebuild_columns()
         self.refresh_table()
@@ -2270,6 +2394,7 @@ class NextBookApp:
     # ---------------------------------------------------------------- arayüz
     def _build_ui(self):
         r, t = self.root, self.theme
+        self._hlines, self._vlines = [], []   # ızgara çizgileri yeni tabloya aittir
         top = ttk.Frame(r, padding=(14, 10, 14, 4))
         top.pack(fill="x")
         ttk.Label(top, text="Next Book", font=("Georgia", 20, "bold"),
@@ -2358,7 +2483,8 @@ class NextBookApp:
         self.tree = ttk.Treeview(mf, show=("tree", "headings"), selectmode="extended")
         vs = ttk.Scrollbar(mf, orient="vertical", command=self.tree.yview)
         hs = ttk.Scrollbar(mf, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        self.vs, self.hs = vs, hs
+        self.tree.configure(yscrollcommand=self._yset, xscrollcommand=self._xset)
         self.tree.grid(row=0, column=0, sticky="nsew", padx=(6, 0), pady=(6, 0))
         vs.grid(row=0, column=1, sticky="ns", padx=(0, 6), pady=(6, 0))
         hs.grid(row=1, column=0, sticky="ew", padx=(6, 0), pady=(0, 6))
@@ -2374,6 +2500,9 @@ class NextBookApp:
         self.tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.tree, e), add="+")
         self.tree.bind("<Motion>", self._on_tree_motion)
         self.tree.bind("<Button-3>", self._on_row_menu)
+        self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+        for seq in ("<Configure>", "<B1-Motion>", "<ButtonRelease-1>"):
+            self.tree.bind(seq, self._schedule_grid, add="+")
         self._build_status_icons()
 
         # alt çubuk
@@ -2382,9 +2511,12 @@ class NextBookApp:
         ttk.Button(bf, text=T("btn_settings"), command=self.open_settings).pack(side="left")
         ttk.Button(bf, text=T("btn_import"), command=self.import_from_excel).pack(side="left", padx=(18, 0))
         ttk.Button(bf, text=T("btn_export"), command=self.export_to_excel).pack(side="left", padx=6)
+        self.grid_var = tk.BooleanVar(value=self.grid_on)
+        ttk.Checkbutton(bf, text="▦ " + T("btn_grid"), style="Grid.Toolbutton", variable=self.grid_var,
+                        command=self.toggle_grid).pack(side="left")
         self.status = ttk.Label(bf, text="", foreground=t["muted"])
         self.status.pack(side="right")
-        hint = ttk.Label(r, foreground=t["hint"], padding=(14, 0, 14, 8), text=T("hint"), justify="left")
+        hint = ttk.Label(r, foreground=t["hint"], padding=(14, 0, 14, 8), text=T("hint") + " · " + T("hint_blank"), justify="left")
         hint.pack(fill="x")
         hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(200, e.width - 28)))
 
@@ -2600,19 +2732,33 @@ class NextBookApp:
             self.save()
 
     # ---------------------------------------------------------------- tema noktaları
+    def _swatch_xs(self):
+        """Her tema topunun sol x değeri; aydınlık ve karanlık gruplar arasında küçük bir boşluk var."""
+        sw, xs, x = self.SWATCH, [], 8
+        light = sum(1 for th in THEMES.values() if not th["dark"])
+        for i in range(len(THEMES)):
+            if i == light:
+                x += 14
+            xs.append(x)
+            x += sw + 8
+        return xs
+
     def _build_swatches(self, parent):
         """Her tema için tek renkli bir top (üstte hafif parlama, seçili olanın etrafında halka)."""
         t, sw = self.theme, self.SWATCH
-        names = list(THEMES)
-        c = tk.Canvas(parent, width=len(names) * (sw + 8) + 6, height=sw + 12, bg=t["bg"],
+        xs = self._swatch_xs()
+        c = tk.Canvas(parent, width=xs[-1] + sw + 12, height=sw + 12, bg=t["bg"],
                       highlightthickness=0, bd=0, cursor="hand2")
-        for i, name in enumerate(names):
-            th = THEMES[name]
-            x0, y0 = 8 + i * (sw + 8), 6
+        light = sum(1 for th in THEMES.values() if not th["dark"])
+        if 0 < light < len(xs):   # gruplar arası ince ayırıcı
+            gx = xs[light] - 11
+            c.create_line(gx, 8, gx, sw + 4, fill=t["border"])
+        for x0, (name, th) in zip(xs, THEMES.items()):
+            y0 = 6
             if name == self.theme_name:
                 c.create_oval(x0 - 4, y0 - 4, x0 + sw + 4, y0 + sw + 4, outline=t["accent"], width=2)
-            base = th["header_bg"]
-            c.create_oval(x0, y0, x0 + sw, y0 + sw, fill=base, outline=_mix(base, "#000000", 0.25))
+            base = th["swatch"]
+            c.create_oval(x0, y0, x0 + sw, y0 + sw, fill=base, outline=_mix(base, t["text"], 0.35))
             hl = _mix(base, "#FFFFFF", 0.45)
             c.create_oval(x0 + sw * 0.22, y0 + sw * 0.16, x0 + sw * 0.52, y0 + sw * 0.40, fill=hl, outline="")
         c.bind("<Button-1>", self._on_swatch_click)
@@ -2620,10 +2766,10 @@ class NextBookApp:
         self.swatch_canvas = c
 
     def _on_swatch_click(self, e):
-        idx = int((e.x - 4) // (self.SWATCH + 8))
-        names = list(THEMES)
-        if 0 <= idx < len(names):
-            self.set_theme(names[idx])
+        for x0, name in zip(self._swatch_xs(), THEMES):
+            if x0 - 4 <= e.x <= x0 + self.SWATCH + 4:
+                self.set_theme(name)
+                return
 
     # ---------------------------------------------------------------- duyurular
     def ann_icon_img(self, kind, fill, glyph, bg, size=None):
@@ -2877,6 +3023,7 @@ class NextBookApp:
                 w = self.font_head.measure(self.heading_text(cid)) + 46
                 self.tree.column(cid, width=max(84, min(200, w)), minwidth=60, stretch=False, anchor="center")
         self.tree.xview_moveto(0)
+        self._schedule_grid()
 
     def autosize_columns(self):
         """Kitap adı / yazar / tür sütunlarını içeriğe göre ayarla (kesilmesin)."""
@@ -2941,8 +3088,11 @@ class NextBookApp:
         for b in self.data["books"]:
             self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b),
                              image=self._row_image(b))
+        # en altta her zaman boş bir satır: herhangi bir hücresine yazılınca yeni kitap eklenir
+        self.tree.insert("", "end", iid=NEW_IID, values=[""] * len(self.col_ids()), tags=("unscored",))
         self.autosize_columns()
         self.update_status()
+        self._schedule_grid()
 
     def update_row(self, b):
         self.tree.item(b["id"], values=self.row_values(b), tags=self.row_tag(b), image=self._row_image(b))
@@ -3087,16 +3237,21 @@ class NextBookApp:
         self.res_tree.item(sel[0], tags=("added",))
 
     def add_manual(self):
-        title = simpledialog.askstring(APP_NAME, T("ask_title"), parent=self.root)
-        if title and title.strip():
-            self._append_book(new_book(title.strip()))
+        dlg = ManualBookDialog(self)
+        self.root.wait_window(dlg)
+        r = dlg.result
+        if r:
+            self._append_book(new_book(r["title"], r["author"], r["genre"], r["pages"]))
 
     def _append_book(self, b):
         self.data["books"].append(b)
         self.save()
         self.tree.insert("", "end", iid=b["id"], values=self.row_values(b), tags=self.row_tag(b),
                          image=self._row_image(b))
+        if self.tree.exists(NEW_IID):
+            self.tree.move(NEW_IID, "", "end")   # boş satır hep en altta kalsın
         self.autosize_columns()
+        self._schedule_grid()
         self.tree.selection_set(b["id"])
         self.tree.see(b["id"])
         self.update_status()
@@ -3111,6 +3266,7 @@ class NextBookApp:
         size = max(14, rh - 10)
         self.status_icons = {
             "reading": make_status_icon("reading", size, t["accent"], t["accent_fg"], ring=t["accent_fg"]),
+            "paused": make_status_icon("paused", size, t["muted"], t["tree_bg"], ring=t["tree_bg"]),
             "done": make_status_icon("done", size, t["header_bg"], t["header_fg"], ring=t["header_fg"]),
         }
         self.tree.heading("#0", text="")
@@ -3122,12 +3278,12 @@ class NextBookApp:
     def _on_row_menu(self, event):
         """Satıra sağ tık: durum (okunacak / okuyorum / okudum) ve listeden silme. Çoklu seçimde hepsine uygulanır."""
         iid = self.tree.identify_row(event.y)
-        if not iid or self.tree.identify_region(event.x, event.y) == "heading":
+        if not iid or iid == NEW_IID or self.tree.identify_region(event.x, event.y) == "heading":
             return
         self.finish_edit(True)
         if iid not in self.tree.selection():
             self.tree.selection_set(iid)
-        ids = list(self.tree.selection())
+        ids = [i for i in self.tree.selection() if i != NEW_IID]
         states = {book_status(b) for b in map(self.book_by_id, ids) if b}
         self._menu_var = tk.StringVar(value=next(iter(states)) if len(states) == 1 else "")
         t = self.theme
@@ -3157,7 +3313,7 @@ class NextBookApp:
         self.save()
 
     def delete_selected(self):
-        sel = self.tree.selection()
+        sel = tuple(i for i in self.tree.selection() if i != NEW_IID)
         if not sel:
             return
         if not messagebox.askyesno(APP_NAME, T("confirm_delete", n=len(sel))):
@@ -3208,8 +3364,10 @@ class NextBookApp:
         if not bbox:
             return
         x, y, w, h = bbox
-        b = self.book_by_id(iid)
-        if cid.startswith("c_"):
+        b = self.book_by_id(iid)   # boş satırda (NEW_IID) kitap yoktur
+        if b is None:
+            cur = ""
+        elif cid.startswith("c_"):
             cur = fmt_num(b["scores"].get(cid[2:]))
         else:
             cur = "" if b[cid] in (None, "") else str(b[cid])
@@ -3235,7 +3393,10 @@ class NextBookApp:
         if not e:
             return "break"
         iid, idx = e["iid"], e["idx"]
+        self._created = None
         self.finish_edit(True)
+        if iid == NEW_IID and self._created:   # boş satırda yazılan kitap oluştu: imleç onun satırından devam etsin
+            iid = self._created
         ids = self.col_ids()
         nidx = idx + d_col
         niid = iid
@@ -3262,13 +3423,11 @@ class NextBookApp:
         if commit:
             self.apply_edit(e["iid"], e["cid"], text)
 
-    def apply_edit(self, iid, cid, text):
-        b = self.book_by_id(iid)
-        if not b:
-            return
+    def _apply_to_book(self, b, cid, text):
+        """Hücre metnini kitaba işler. Geçersizse False döner (kaydetme / satır güncelleme çağıranda)."""
         if cid == "title":
             if not text:
-                return
+                return False
             b["title"] = text
         elif cid in ("author", "genre"):
             b[cid] = text
@@ -3284,7 +3443,7 @@ class NextBookApp:
                 except (ValueError, OverflowError):
                     self.root.bell()
                     self.set_status(T("bad_pages"))
-                    return
+                    return False
         else:   # puan
             key = cid[2:]
             if text == "":
@@ -3298,10 +3457,133 @@ class NextBookApp:
                 except ValueError:
                     self.root.bell()
                     self.set_status(T("bad_score", max=smax))
-                    return
+                    return False
                 b["scores"][key] = int(v) if v == int(v) else round(v, 1)
+        return True
+
+    def apply_edit(self, iid, cid, text):
+        self._created = None
+        if iid == NEW_IID:   # boş satıra yazıldı → yeni kitap
+            if not text:
+                return
+            b = new_book("")
+            if not self._apply_to_book(b, cid, text):
+                return
+            self._append_book(b)
+            self._created = b["id"]
+            return
+        b = self.book_by_id(iid)
+        if not b or not self._apply_to_book(b, cid, text):
+            return
         self.save()
         self.update_row(b)
+
+    # ---------------------------------------------------------------- ızgara
+    # Treeview hücre çizgisi çizemediği için tabloya 1 piksellik ince çubuklar yerleştirilir;
+    # yalnızca ekranda görünen satır ve sütunlar için çizilir, kaydırma / boyut değişiminde yenilenir.
+    def toggle_grid(self):
+        self.grid_on = bool(self.grid_var.get())
+        self._persist_settings()
+        self._schedule_grid()
+
+    def _yset(self, a, b):
+        self.vs.set(a, b)
+        self._schedule_grid()
+
+    def _xset(self, a, b):
+        self.hs.set(a, b)
+        self._schedule_grid()
+
+    def _schedule_grid(self, *_):
+        if self._grid_job is None:
+            try:
+                self._grid_job = self.root.after_idle(self._redraw_grid)
+            except tk.TclError:
+                self._grid_job = None
+
+    def _forward(self, e, seq):
+        """İnce çizginin üstüne denk gelen tıklama / tekerlek olayını tabloya ilet."""
+        tr = self.tree
+        kw = {"x": e.x_root - tr.winfo_rootx(), "y": e.y_root - tr.winfo_rooty()}
+        if seq == "<MouseWheel>":
+            kw["delta"] = e.delta
+        try:
+            tr.event_generate(seq, **kw)
+        except tk.TclError:
+            pass
+        return "break"
+
+    def _grid_line(self, pool, i):
+        if i < len(pool):
+            return pool[i]
+        f = tk.Frame(self.tree, bd=0, highlightthickness=0, bg=self.theme["grid"])
+        for src, dst in (("<ButtonPress-1>", "<ButtonPress-1>"), ("<Double-ButtonPress-1>", "<ButtonPress-1>"),
+                         ("<ButtonRelease-1>", "<ButtonRelease-1>"), ("<ButtonPress-3>", "<ButtonPress-3>"),
+                         ("<MouseWheel>", "<MouseWheel>")):
+            f.bind(src, lambda e, d=dst: self._forward(e, d))
+        pool.append(f)
+        return f
+
+    def _redraw_grid(self):
+        self._grid_job = None
+        tree = self.tree
+        try:
+            if not tree.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        used_h = used_v = 0
+        if self.grid_on:
+            try:
+                W, H = tree.winfo_width(), tree.winfo_height()
+                kids = tree.get_children()
+                n = len(kids)
+                bb = None
+                if n and W > 1 and H > 1:
+                    first = min(n - 1, max(0, int(round(tree.yview()[0] * n))))
+                    bb = tree.bbox(kids[first])
+                if bb:
+                    y0, rh = bb[1], bb[3]
+                    rows = min(n - first, -(-(H - y0) // rh)) if rh > 0 else 0
+                    y_end = min(H, y0 + rows * rh)
+                    for k in range(rows):
+                        y = y0 + (k + 1) * rh - 1
+                        if y >= H:
+                            break
+                        f = self._grid_line(self._hlines, used_h)
+                        used_h += 1
+                        f.place(x=0, y=y, width=W, height=1)
+                    if rows:
+                        cols = ["#0"] + self.col_ids()
+                        widths = [int(tree.column(c, "width")) for c in cols]
+                        total = sum(widths)
+                        x = -round(tree.xview()[0] * total)
+                        for w in widths:
+                            x += w
+                            if 0 < x - 1 < W - 1:
+                                f = self._grid_line(self._vlines, used_v)
+                                used_v += 1
+                                f.place(x=x - 1, y=y0, width=1, height=y_end - y0)
+            except tk.TclError:
+                pass
+        for f in self._hlines[used_h:] + self._vlines[used_v:]:
+            f.place_forget()
+        if self.edit:   # açık hücre düzenleyici çizgilerin üstünde kalsın
+            try:
+                self.edit["entry"].lift()
+            except tk.TclError:
+                pass
+
+    def _on_tree_click(self, event):
+        """Boş satırın bir hücresine tek tıklamak doğrudan yazmaya başlatır."""
+        if self.tree.identify_region(event.x, event.y) != "cell" or self.tree.identify_row(event.y) != NEW_IID:
+            return
+        try:
+            idx = int(self.tree.identify_column(event.x)[1:]) - 1
+        except ValueError:
+            return
+        if idx >= 0:
+            self.root.after(20, lambda: self.tree.exists(NEW_IID) and self.start_edit(NEW_IID, idx))
 
     # ---------------------------------------------------------------- puanlama ayarları
     def open_settings(self):
