@@ -2359,10 +2359,10 @@ class NextBookApp:
                         relief="flat", padding=6)
         style.map("Treeview.Heading", background=[("active", t["header_active"])])
         try:   # satır başındaki "ağaç oku" boşluğunu kaldır: rozet o boşluk yüzünden sağa kayıyordu
+            # Treeitem.focus de çıkarıldı: boş (rozetsiz) #0 hücresinde noktalı odak dikdörtgeni çiziyordu
             style.layout("Treeview.Item", [("Treeitem.padding", {"sticky": "nswe", "children": [
                 ("Treeitem.image", {"side": "left", "sticky": ""}),
-                ("Treeitem.focus", {"side": "left", "sticky": "", "children": [
-                    ("Treeitem.text", {"side": "left", "sticky": ""})]})]})])
+                ("Treeitem.text", {"side": "left", "sticky": ""})]})])
             style.configure("Treeview.Item", padding=(self.ICON_PAD, 0, 0, 0))
         except tk.TclError:
             pass
