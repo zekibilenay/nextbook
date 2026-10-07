@@ -1,4 +1,4 @@
-name: Windows surumunu derle
+name: Surumleri derle (Windows, macOS, Linux)
 
 on:
   push:
@@ -12,13 +12,42 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows
+            os: windows-latest
+            asset: NextBook-windows.zip
+            sep: ";"
+            icon: "--icon next_book.ico"
+          - label: macOS (Apple Silicon)
+            os: macos-latest
+            asset: NextBook-macos-arm64.zip
+            sep: ":"
+            icon: "--icon next_book.icns"
+          - label: macOS (Intel)
+            os: macos-15-intel
+            asset: NextBook-macos-intel.zip
+            sep: ":"
+            icon: "--icon next_book.icns"
+          - label: Linux
+            os: ubuntu-22.04
+            asset: NextBook-linux.tar.gz
+            sep: ":"
+            icon: ""
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Tkinter kur (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk tk-dev
 
       - name: Etiket ile APP_VERSION ayni mi?
         if: startsWith(github.ref, 'refs/tags/v')
@@ -38,31 +67,57 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Derle
-        run: pyinstaller --onedir --windowed --name NextBook --icon next_book.ico --add-data "next_book.ico;." --hidden-import openpyxl next_book.py
+        shell: bash
+        run: pyinstaller --onedir --windowed --name NextBook ${{ matrix.icon }} --add-data "next_book.ico${{ matrix.sep }}." --hidden-import openpyxl next_book.py
 
-      - name: Zip ve SHA256 olustur
+      - name: Paketle (Windows - zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/NextBook -DestinationPath "${{ matrix.asset }}"
+
+      - name: Paketle (macOS - .app zip)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/NextBook.app "${{ matrix.asset }}"
+
+      - name: Paketle (Linux - tar.gz, calistirma izinleri korunur)
+        if: runner.os == 'Linux'
+        run: tar -czf "${{ matrix.asset }}" -C dist NextBook
+
+      - name: SHA256 olustur (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/NextBook -DestinationPath NextBook-windows.zip
-          $h = (Get-FileHash NextBook-windows.zip -Algorithm SHA256).Hash.ToLower()
-          "$h  NextBook-windows.zip" | Out-File -Encoding ascii NextBook-windows.zip.sha256
+          $h = (Get-FileHash "${{ matrix.asset }}" -Algorithm SHA256).Hash.ToLower()
+          "$h  ${{ matrix.asset }}" | Out-File -Encoding ascii "${{ matrix.asset }}.sha256"
+
+      - name: SHA256 olustur (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
 
       - name: Uretim kaydi ekle
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: NextBook-windows.zip
+          subject-path: ${{ matrix.asset }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NextBook-windows
+          name: ${{ matrix.asset }}
           path: |
-            NextBook-windows.zip
-            NextBook-windows.zip.sha256
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+
+  release:
+    name: Release'e ekle
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
 
       - name: Release'e ekle
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            NextBook-windows.zip
-            NextBook-windows.zip.sha256
+          files: release-files/*
