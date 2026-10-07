@@ -1,7 +1,7 @@
 # Next Book
 
-**TR** · Okuyacağın kitapları kendi ölçütlerine göre puanlayıp kişisel bir okuma sırası oluşturan, ücretsiz ve açık kaynaklı Windows uygulaması.
-**EN** · A free, open-source Windows app that ranks the books you want to read using scoring criteria you define yourself.
+**TR** · Okuyacağın kitapları kendi ölçütlerine göre puanlayıp kişisel bir okuma sırası oluşturan, ücretsiz ve açık kaynaklı Windows, macOS ve Linux uygulaması.
+**EN** · A free, open-source Windows, macOS and Linux app that ranks the books you want to read using scoring criteria you define yourself.
 
 ## Özellikler / Features
 - 🌍 **6 dil / 6 languages:** Türkçe, English, Русский, Deutsch, Français, 中文 (ilk açılışta seçilir / chosen on first launch)
@@ -23,28 +23,41 @@
 
 ## İndirme / Download
 
-[Releases](../../releases) sayfasından en son `NextBook-windows.zip` dosyasını indir, zip'i bir klasöre çıkar, `NextBook.exe` dosyasını çalıştır.
-Download the latest `NextBook-windows.zip` from [Releases](../../releases), extract it and run `NextBook.exe`.
+[Releases](../../releases) sayfasından kendi sistemine uygun dosyayı indir / Grab the file for your system from [Releases](../../releases):
+
+| Sistem / System | Dosya / File | Nasıl çalıştırılır / How to run |
+|---|---|---|
+| Windows | `NextBook-windows.zip` | Zip'i çıkar, `NextBook.exe` / Extract, run `NextBook.exe` |
+| macOS (Apple Silicon) | `NextBook-macos-arm64.zip` | Zip'i çıkar, `NextBook.app` / Extract, open `NextBook.app` |
+| macOS (Intel) | `NextBook-macos-intel.zip` | Zip'i çıkar, `NextBook.app` / Extract, open `NextBook.app` |
+| Linux (x86-64) | `NextBook-linux.tar.gz` | `tar -xzf NextBook-linux.tar.gz && ./NextBook/NextBook` |
 
 ### Windows "korumalı" uyarısı verirse / If Windows SmartScreen warns you
-Uygulama henüz dijital olarak imzalanmadığı için Windows SmartScreen "Bilinmeyen yayıncı" uyarısı gösterebilir. **Daha fazla bilgi → Yine de çalıştır** diyebilirsin. Güvenmek zorunda değilsin, kontrol edebilirsin:
-The app is not code-signed yet, so Windows may show an "unknown publisher" warning (**More info → Run anyway**). You do not have to trust it blindly:
+Uygulama henüz dijital olarak imzalanmadığı için Windows SmartScreen "Bilinmeyen yayıncı" uyarısı gösterebilir. **Daha fazla bilgi → Yine de çalıştır** diyebilirsin. / The app is not code-signed yet, so Windows may show an "unknown publisher" warning (**More info → Run anyway**).
 
+### macOS "doğrulanamadı" uyarısı verirse / If macOS blocks the app
+Uygulama Apple tarafından imzalanmadığı için Gatekeeper ilk açılışta engelleyebilir. `NextBook.app`'e sağ tıklayıp **Aç**'ı seç ya da Terminal'de `xattr -dr com.apple.quarantine NextBook.app` çalıştır. / The app is not notarized, so Gatekeeper may block the first launch. Right-click `NextBook.app` → **Open**, or run `xattr -dr com.apple.quarantine NextBook.app`.
+
+### Linux
+Tkinter gerekmez (pakete dahildir); ancak sistemde X11/Wayland (XWayland) ve temel Tk kütüphaneleri bulunmalıdır. / Tkinter is bundled; you only need a desktop session with the usual X11 libraries.
+
+### Güvenmek zorunda değilsin, kontrol edebilirsin / You do not have to trust it blindly
 1. **Kaynak kod açık / Open source:** `next_book.py` tek dosyadır, okuyabilirsin. / a single readable file.
-2. **Exe'yi bu depo derler / Built by GitHub Actions:** `.github/workflows/build.yml`. Doğrulamak için / to verify: `gh attestation verify NextBook-windows.zip --repo zekibilenay/nextbook`
-3. **Sağlama toplamı / Checksum:** PowerShell: `Get-FileHash NextBook-windows.zip` çıktısı release'teki `.sha256` ile aynı olmalı / must match the `.sha256` file.
-4. **Hiç exe istemiyorsan / No exe at all:** Python 3.9+ ile `python next_book.py`
+2. **Paketleri bu depo derler / Built by GitHub Actions:** `.github/workflows/build.yml`. Doğrulamak için / to verify: `gh attestation verify <dosya/file> --repo zekibilenay/nextbook`
+3. **Sağlama toplamı / Checksum:** Her dosyanın yanında bir `.sha256` vardır. Windows: `Get-FileHash <dosya>` · macOS / Linux: `shasum -a 256 <dosya>`; çıktı `.sha256` ile aynı olmalı. / Each file ships with a `.sha256`; the output must match.
+4. **Hiç paket istemiyorsan / No package at all:** Python 3.9+ ile `python next_book.py`
 
 ## Gizlilik / Privacy
-- Verilerin yalnızca bilgisayarında, `%APPDATA%\NextBook` klasöründe tutulur. / Your data stays on your computer.
+- Verilerin yalnızca bilgisayarında tutulur: Windows `%APPDATA%\NextBook`, macOS `~/Library/Application Support/NextBook`, Linux `~/.local/share/NextBook`. / Your data stays on your computer (paths above).
 - Ağ bağlantıları: (1) arama yaptığında `openlibrary.org`'a giden kitap adı / yazar sorgusu, (2) açılışta ve uygulama açık kaldıkça 6 saatte bir, duyuru dosyasını okumak için tek bir HTTPS GET isteği (kimlik, kitap verisi veya çerez gönderilmez; sunucu yalnızca `User-Agent: NextBook/<sürüm>` görür). / Network: (1) your search query to `openlibrary.org`, (2) one HTTPS GET at startup, and again every 6 hours while the app stays open, for the announcement file (no identifiers, no book data; the server only sees `User-Agent: NextBook/<version>`).
-- Duyuruları kapatmak için `%APPDATA%\NextBook\settings.json` içine `"announcements": false` yaz; duyuru kutusu da gizlenir. / To disable announcements set `"announcements": false` in `settings.json`; the announcement box is hidden too.
+- Duyuruları kapatmak için veri klasöründeki `settings.json` içine `"announcements": false` yaz; duyuru kutusu da gizlenir. / To disable announcements set `"announcements": false` in `settings.json`; the announcement box is hidden too.
 
 ## Kaynaktan çalıştırma / Run from source
 ```
 pip install -r requirements.txt
 python next_book.py
-pyinstaller --onedir --windowed --name NextBook --icon next_book.ico --add-data "next_book.ico;." next_book.py
+pyinstaller --onedir --windowed --name NextBook --icon next_book.ico --add-data "next_book.ico;." next_book.py   # Windows
+pyinstaller --onedir --windowed --name NextBook --add-data "next_book.ico:." --hidden-import openpyxl next_book.py   # macOS / Linux
 ```
 
 ## Duyuru sunucusu / Announcement feed
@@ -65,9 +78,13 @@ Adresi `next_book.py` içindeki `ANNOUNCE_URL` ile (ya da `NEXTBOOK_ANNOUNCE_URL
 git tag v1.4.3
 git push --tags
 ```
-GitHub Actions exe'yi derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.4 çıkınca `1.4.3`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the exe and attaches it to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.3` when 1.4.4 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
+GitHub Actions Windows, macOS (Apple Silicon + Intel) ve Linux paketlerini derler ve Releases'e yükler. Etiket, `next_book.py` içindeki `APP_VERSION` ile aynı olmalıdır; değilse derleme durur. Release yayınlandıktan sonra duyuru dosyasındaki "yeni sürüm" duyurusunun `max_version` değerini, yayınladığın sürümün bir öncekine ayarla (ör. 1.4.4 çıkınca `1.4.3`). Feed'de aynı anda `apps.nextbook.latest` de yazarsan uygulama kendi sade "yeni sürüm" duyurusunu ayrıca üretir ve eski sürümlerde iki benzer duyuru görünür; elle yazılmış sıcak bir duyuru kullanıyorsan `latest` yazma. / GitHub Actions builds the Windows, macOS (Apple Silicon + Intel) and Linux packages and attaches them to the release. The tag must match `APP_VERSION` in `next_book.py`, otherwise the build stops. After the release is published, set `max_version` of the "new version" announcement in the feed to the version before the one you released (e.g. `1.4.3` when 1.4.4 ships). If you also set `apps.nextbook.latest`, the app generates its own plain "new version" announcement and older versions show two similar ones, so leave `latest` out when you write that announcement by hand.
 
 ## Değişiklikler / Changelog
+
+### 1.8.0
+- **TR:** Durum rozetleri (okuyorum / yarım bıraktım / okudum) artık hücrede tam ortada; ızgara modunda sağa kayma düzeltildi. Kitap adı, yazar, tür ve sayfa sayısının dördü de boşalan satır otomatik silinir. Kitap adı tamamen silinebilir; yalnızca yazarı olan satırlar oluşturulabilir (tablodan ve "+ Elle ekle" penceresinden). **macOS ve Linux sürümleri eklendi** (macOS için uygulama simgesiyle); veri klasörü her sistemde o sistemin standardına göre seçilir, macOS'ta sağ tık / Ctrl+tık menüsü çalışır.
+- **EN:** Status badges (reading / paused / read) are now truly centred in their cell; the right-shift in grid mode is fixed. A row whose title, author, genre and page count are all empty is removed automatically. The title can be cleared completely, so author-only rows are possible (in the table and in "+ Add manually"). **macOS and Linux builds were added** (with an app icon on macOS); the data folder follows each system's convention, and the right-click / Ctrl+click menu works on macOS.
 
 ### 1.7.0
 - **TR:** Uygulama tam ekran boyutunda açılıyor. 6 tema: 3 aydınlık (cream, moss, ocean), 3 karanlık (night, plum, ember); tema topları gruplanmış durumda (önceki lavanta/kum seçimi varsayılana döner). "+ Elle ekle" artık kitap adının yanında yazar, tür ve sayfa sayısını da soruyor. Tablonun en altında her zaman boş bir satır var; herhangi bir sütununa yazınca kitap eklenir (Enter/Tab ile hızlıca devam edilir). Yeni durum: **Yarım bıraktım** (⏸ rozeti, sağ tık menüsünden); Excel'e yazılır ve içe aktarılır. Hücreler arasına göz yormayan bir ızgara eklendi; alt çubukta içe/dışa aktarmanın yanındaki **Izgara** düğmesiyle açılıp kapanır (seçim saklanır). Hakkında kartındaki GitHub bağlantısı kaldırıldı.

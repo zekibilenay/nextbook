@@ -38,10 +38,24 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import tkinter.font as tkfont
 
 APP_NAME = "Next Book"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 APP_ID = "nextbook"          # duyuru sunucusunda bu uygulamayı tanımlayan kimlik
 REPO_URL = "https://github.com/zekibilenay/nextbook"
-DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "NextBook"
+def _default_data_dir():
+    """Windows: %APPDATA%\\NextBook · macOS: ~/Library/Application Support/NextBook · Linux: ~/.local/share/NextBook"""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or Path.home()
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    return Path(base) / "NextBook"
+
+
+DATA_DIR = _default_data_dir()
+# macOS'ta sağ tık <Button-2>, orta tık <Button-3>; Windows / Linux'ta tersi
+RCLICK, MCLICK = ("<Button-2>", "<Button-3>") if sys.platform == "darwin" else ("<Button-3>", "<Button-2>")
+RCLICK_PRESS = RCLICK.replace("Button", "ButtonPress")
 DATA_FILE = DATA_DIR / "next_book.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"     # dil / tema / yazı tipi (veriden ayrı)
 
@@ -881,10 +895,12 @@ def _png_chunk(tag, data):
     return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
 
 
-def status_icon_png(kind, size, fill, glyph, ring=None):
+def status_icon_png(kind, size, fill, glyph, ring=None, width=None):
     """Yuvarlak rozet (kind: 'reading' = oynat üçgeni, 'paused' = duraklat çubukları, 'done' = onay işareti) → RGBA PNG baytları.
     4x4 alt örnekleme: kenar yumuşak, zemin saydam; hangi renkli satırın üstünde olursa olsun uyar."""
     S = float(size)
+    W = int(width or size)
+    ox = (W - size) / 2.0   # rozet, görselin yatay ortasında durur; kenar boşlukları saydamdır
     c, R = S / 2.0, S / 2.0 - 0.5
     rw = max(1.0, S * 0.07) if ring else 0.0
     tri = [(S * 0.39, S * 0.27), (S * 0.39, S * 0.73), (S * 0.745, S * 0.50)]
@@ -904,11 +920,11 @@ def status_icon_png(kind, size, fill, glyph, ring=None):
     raw = bytearray()
     for py in range(size):
         raw.append(0)   # PNG satır filtresi: yok
-        for px in range(size):
+        for px in range(W):
             r = g = b = hit = 0
             for sy in range(n):
                 for sx in range(n):
-                    x, y = px + (sx + 0.5) / n, py + (sy + 0.5) / n
+                    x, y = px - ox + (sx + 0.5) / n, py + (sy + 0.5) / n
                     d2 = (x - c) ** 2 + (y - c) ** 2
                     if d2 > R * R:
                         continue
@@ -922,13 +938,13 @@ def status_icon_png(kind, size, fill, glyph, ring=None):
             else:
                 raw += b"\x00\x00\x00\x00"
     return (b"\x89PNG\r\n\x1a\n"
-            + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+            + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", W, size, 8, 6, 0, 0, 0))
             + _png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
             + _png_chunk(b"IEND", b""))
 
 
-def make_status_icon(kind, size, fill, glyph, ring=None):
-    data = base64.b64encode(status_icon_png(kind, size, fill, glyph, ring)).decode("ascii")
+def make_status_icon(kind, size, fill, glyph, ring=None, width=None):
+    data = base64.b64encode(status_icon_png(kind, size, fill, glyph, ring, width)).decode("ascii")
     return tk.PhotoImage(data=data, format="png")
 
 
@@ -1703,7 +1719,7 @@ class LanguageDialog(tk.Toplevel):
 # ============================================================================
 
 class ManualBookDialog(tk.Toplevel):
-    """Elle ekleme: kitap adı, yazar, tür, sayfa sayısı. Yalnızca kitap adı zorunlu."""
+    """Elle ekleme: kitap adı, yazar, tür, sayfa sayısı. En az biri dolu olmalı (yalnızca yazar da olabilir)."""
 
     KEYS = ("title", "author", "genre", "pages")
 
@@ -1760,7 +1776,7 @@ class ManualBookDialog(tk.Toplevel):
 
     def submit(self):
         title = self.entries["title"].get().strip()
-        if not title:
+        if not any(self.entries[k].get().strip() for k in self.KEYS):
             self.bell()
             self.entries["title"].focus_set()
             return
@@ -2157,6 +2173,7 @@ class SettingsDialog(tk.Toplevel):
 
 class NextBookApp:
     FIXED = ["title", "author", "genre", "pages"]
+    ICON_PAD = 3   # #0 hücresinde rozetin solunda kalan sabit boşluk (px)
     SWATCH = 26
 
     def __init__(self, root):
@@ -2341,6 +2358,14 @@ class NextBookApp:
         style.configure("Treeview.Heading", background=t["header_bg"], foreground=t["header_fg"],
                         relief="flat", padding=6)
         style.map("Treeview.Heading", background=[("active", t["header_active"])])
+        try:   # satır başındaki "ağaç oku" boşluğunu kaldır: rozet o boşluk yüzünden sağa kayıyordu
+            style.layout("Treeview.Item", [("Treeitem.padding", {"sticky": "nswe", "children": [
+                ("Treeitem.image", {"side": "left", "sticky": ""}),
+                ("Treeitem.focus", {"side": "left", "sticky": "", "children": [
+                    ("Treeitem.text", {"side": "left", "sticky": ""})]})]})])
+            style.configure("Treeview.Item", padding=(self.ICON_PAD, 0, 0, 0))
+        except tk.TclError:
+            pass
         style.map("Treeview", background=[("selected", t["select_bg"])],
                   foreground=[("selected", t["select_fg"])])
         try:   # Combobox açılır listesi
@@ -2499,7 +2524,9 @@ class NextBookApp:
         self.tree.bind("<Shift-MouseWheel>", self._on_shift_wheel)
         self.tree.bind("<Button-1>", lambda e: self._clear_if_blank(self.tree, e), add="+")
         self.tree.bind("<Motion>", self._on_tree_motion)
-        self.tree.bind("<Button-3>", self._on_row_menu)
+        self.tree.bind(RCLICK, self._on_row_menu)
+        if sys.platform == "darwin":
+            self.tree.bind("<Control-Button-1>", self._on_row_menu)   # Ctrl+tık = sağ tık
         self.tree.bind("<Button-1>", self._on_tree_click, add="+")
         for seq in ("<Configure>", "<B1-Motion>", "<ButtonRelease-1>"):
             self.tree.bind(seq, self._schedule_grid, add="+")
@@ -2546,8 +2573,8 @@ class NextBookApp:
                 w.bind("<B1-Motion>", self._tab_motion)
                 w.bind("<ButtonRelease-1>", self._tab_release)
                 w.bind("<Double-Button-1>", lambda _e, l=lst: self.rename_list(l))
-                w.bind("<Button-3>", lambda e, l=lst: self._tab_menu(l, e))
-                w.bind("<Button-2>", lambda _e, l=lst: self.delete_list(l))
+                w.bind(RCLICK, lambda e, l=lst: self._tab_menu(l, e))
+                w.bind(MCLICK, lambda _e, l=lst: self.delete_list(l))
                 w.bind("<Enter>", lambda _e, l=lst: self._style_tabs(hover=l))
                 w.bind("<Leave>", lambda _e: self._style_tabs())
             self.tab_items.append({"lst": lst, "fr": fr, "nm": nm, "x": xb, "pos": (0, 0)})
@@ -3264,13 +3291,15 @@ class NextBookApp:
         except (tk.TclError, ValueError):
             rh = 24
         size = max(14, rh - 10)
+        iw = size + 8   # görsel rozetten geniş: rozet görselin ortasında, sütun da görselin etrafında simetrik
+        colw = iw + 2 * self.ICON_PAD
         self.status_icons = {
-            "reading": make_status_icon("reading", size, t["accent"], t["accent_fg"], ring=t["accent_fg"]),
-            "paused": make_status_icon("paused", size, t["muted"], t["tree_bg"], ring=t["tree_bg"]),
-            "done": make_status_icon("done", size, t["header_bg"], t["header_fg"], ring=t["header_fg"]),
+            "reading": make_status_icon("reading", size, t["accent"], t["accent_fg"], ring=t["accent_fg"], width=iw),
+            "paused": make_status_icon("paused", size, t["muted"], t["tree_bg"], ring=t["tree_bg"], width=iw),
+            "done": make_status_icon("done", size, t["header_bg"], t["header_fg"], ring=t["header_fg"], width=iw),
         }
         self.tree.heading("#0", text="")
-        self.tree.column("#0", width=size + 18, minwidth=size + 18, stretch=False, anchor="center")
+        self.tree.column("#0", width=colw, minwidth=colw, stretch=False, anchor="center")
 
     def _row_image(self, b):
         return getattr(self, "status_icons", {}).get(book_status(b), "")
@@ -3393,8 +3422,14 @@ class NextBookApp:
         if not e:
             return "break"
         iid, idx = e["iid"], e["idx"]
+        nxt = self.tree.next(iid) if self.tree.exists(iid) else ""
         self._created = None
         self.finish_edit(True)
+        if iid != NEW_IID and not self.tree.exists(iid):   # satır boşaldığı için silindi
+            if nxt and self.tree.exists(nxt):
+                self.tree.selection_set(nxt)
+                self.root.after(10, lambda: self.start_edit(nxt, idx if d_row else 0))
+            return "break"
         if iid == NEW_IID and self._created:   # boş satırda yazılan kitap oluştu: imleç onun satırından devam etsin
             iid = self._created
         ids = self.col_ids()
@@ -3426,9 +3461,7 @@ class NextBookApp:
     def _apply_to_book(self, b, cid, text):
         """Hücre metnini kitaba işler. Geçersizse False döner (kaydetme / satır güncelleme çağıranda)."""
         if cid == "title":
-            if not text:
-                return False
-            b["title"] = text
+            b["title"] = text   # boş olabilir: yalnızca yazarı olan satırlar geçerli
         elif cid in ("author", "genre"):
             b[cid] = text
         elif cid == "pages":
@@ -3461,6 +3494,20 @@ class NextBookApp:
                 b["scores"][key] = int(v) if v == int(v) else round(v, 1)
         return True
 
+    @staticmethod
+    def is_blank_book(b):
+        """Kitap adı, yazar, tür ve sayfa sayısının dördü de boşsa satır boştur (boşluk karakteri de boş sayılır)."""
+        return (not (b.get("title") or "").strip() and not (b.get("author") or "").strip()
+                and not (b.get("genre") or "").strip() and b.get("pages") in (None, ""))
+
+    def _remove_book_row(self, b):
+        self.data["books"] = [x for x in self.data["books"] if x["id"] != b["id"]]
+        self.save()
+        if self.tree.exists(b["id"]):
+            self.tree.delete(b["id"])
+        self.update_status()
+        self._schedule_grid()
+
     def apply_edit(self, iid, cid, text):
         self._created = None
         if iid == NEW_IID:   # boş satıra yazıldı → yeni kitap
@@ -3474,6 +3521,9 @@ class NextBookApp:
             return
         b = self.book_by_id(iid)
         if not b or not self._apply_to_book(b, cid, text):
+            return
+        if self.is_blank_book(b):   # dört alan da boşaldı → satırı doğrudan sil
+            self._remove_book_row(b)
             return
         self.save()
         self.update_row(b)
@@ -3518,7 +3568,7 @@ class NextBookApp:
             return pool[i]
         f = tk.Frame(self.tree, bd=0, highlightthickness=0, bg=self.theme["grid"])
         for src, dst in (("<ButtonPress-1>", "<ButtonPress-1>"), ("<Double-ButtonPress-1>", "<ButtonPress-1>"),
-                         ("<ButtonRelease-1>", "<ButtonRelease-1>"), ("<ButtonPress-3>", "<ButtonPress-3>"),
+                         ("<ButtonRelease-1>", "<ButtonRelease-1>"), (RCLICK_PRESS, RCLICK_PRESS),
                          ("<MouseWheel>", "<MouseWheel>")):
             f.bind(src, lambda e, d=dst: self._forward(e, d))
         pool.append(f)
