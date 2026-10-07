@@ -82,7 +82,7 @@ GitHub Actions Windows, macOS (Apple Silicon + Intel) ve Linux paketlerini derle
 
 ## Değişiklikler / Changelog
 
-### 1.8.1
+### 1.8.2
 - **TR:** Okunacak durumundaki satırlarda durum sütununda çıkan noktalı odak dikdörtgeni düzeltildi.
 - **EN:** Fixed a stray dotted focus rectangle in the status column of "to read" rows.
 
