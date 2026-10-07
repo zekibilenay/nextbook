@@ -82,6 +82,10 @@ GitHub Actions Windows, macOS (Apple Silicon + Intel) ve Linux paketlerini derle
 
 ## Değişiklikler / Changelog
 
+### 1.8.1
+- **TR:** Okunacak durumundaki satırlarda durum sütununda çıkan noktalı odak dikdörtgeni düzeltildi.
+- **EN:** Fixed a stray dotted focus rectangle in the status column of "to read" rows.
+
 ### 1.8.0
 - **TR:** Durum rozetleri (okuyorum / yarım bıraktım / okudum) artık hücrede tam ortada; ızgara modunda sağa kayma düzeltildi. Kitap adı, yazar, tür ve sayfa sayısının dördü de boşalan satır otomatik silinir. Kitap adı tamamen silinebilir; yalnızca yazarı olan satırlar oluşturulabilir (tablodan ve "+ Elle ekle" penceresinden). **macOS ve Linux sürümleri eklendi** (macOS için uygulama simgesiyle); veri klasörü her sistemde o sistemin standardına göre seçilir, macOS'ta sağ tık / Ctrl+tık menüsü çalışır.
 - **EN:** Status badges (reading / paused / read) are now truly centred in their cell; the right-shift in grid mode is fixed. A row whose title, author, genre and page count are all empty is removed automatically. The title can be cleared completely, so author-only rows are possible (in the table and in "+ Add manually"). **macOS and Linux builds were added** (with an app icon on macOS); the data folder follows each system's convention, and the right-click / Ctrl+click menu works on macOS.
